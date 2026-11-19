@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editors and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Videos: the demo is linked in the README, not uploaded
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Slides and zipped deliverables
+*.pptx
+*.zip
+
+# LaTeX auxiliary files (in case the report is written here)
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.bcf
+*.blg
+*.run.xml
