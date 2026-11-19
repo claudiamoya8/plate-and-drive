@@ -15,6 +15,11 @@ env/
 Thumbs.db
 desktop.ini
 
+# Calibration photos and the images drawn on them: a person appears in them,
+# so they stay local. Only data/calibration.npz and data/calibration.txt are uploaded.
+data/chessboard_photos/
+data/calibration_results/
+
 # Videos: the demo is linked in the README, not uploaded
 *.mp4
 *.avi
