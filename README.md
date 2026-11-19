@@ -106,7 +106,7 @@ While shaping the idea we also considered these options and decided **not** to d
 A rough picture of how the pieces fit together, based on the plan above:
 
 ```
-OFFLINE   chessboard photos ──► calibration ──► data/calibracion.npz (K, dist, RMS)
+OFFLINE   chessboard photos ──► calibration ──► data/calibration.npz (K, dist, RMS)
 
 LIVE      every frame:  webcam ──► undistort (remap) ──► current phase ──► output window + FPS
 
@@ -124,7 +124,7 @@ These are the rules we agreed on so that the modules fit together:
 - The game is drawn with OpenCV primitives (`rectangle`, `circle`, `fillPoly`, `putText`) on top of a background image of the track. A **mask** of the track tells which pixels are road.
 - The game physics use the **real `dt`** between frames, so the car's speed does not depend on the FPS.
 - Registered license plates are stored in `data/matriculas.json` and the leaderboard in `data/ranking.json`.
-- Calibration parameters are stored in `data/calibracion.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
+- Calibration parameters are stored in `data/calibration.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
 - The code has to be fast: no per-pixel loops in Python, and working on downscaled images whenever possible.
 
 ### Module interfaces
@@ -160,12 +160,28 @@ We plan to reuse the code and approach from the course labs wherever it fits:
 - **Lab 4:** edges, corners and Hough transform.
 - **Lab 5:** background subtraction, optical flow, Kalman filter and meanShift.
 
-## Camera calibration plan
+## Camera calibration
 
-- Chessboard: `damero_8x6_25mm_A4.pdf`, with 8×6 inner corners and 25 mm squares. The squares have to be measured with a ruler after printing.
-- 15 to 20 photos covering the whole image, with the chessboard stuck to something rigid.
-- `findChessboardCorners`, `cornerSubPix` with an (11, 11) window, and `calibrateCamera`.
-- An RMS error below 0.5 px is considered good.
+Done offline, once, before running the system. It follows the method from Lab 2, turned into two scripts in `src/calibration/`:
+
+```bash
+conda activate voi-lab
+python src/calibration/capture.py     # live view; SPACE saves a photo (only if the whole chessboard is visible), q quits
+python src/calibration/calibrate.py   # computes K, the distortion coefficients and the RMS error
+```
+
+- **Chessboard:** `damero_8x6_25mm_A4.pdf`, 9×7 squares (8×6 inner corners), stuck to a rigid folder. Our printer shrank it slightly: seven squares measure 170 mm, so we use **24.29 mm** per square instead of 25 mm.
+- **Photos:** 28 photos at 1280×720 with the laptop's webcam, at different distances and angles. `capture.py` paints in green the part of the image the photos already cover, which is how we noticed the corners of the image were missing in the first 20 photos.
+- **Method:** `findChessboardCorners`, `cornerSubPix` with an (11, 11) window, 3D points on the plane Z = 0 and `calibrateCamera`.
+- The photos are **not uploaded**: a person appears in them. They stay in `data/chessboard_photos/`, which is in `.gitignore`. Only the results are uploaded: `data/calibration.npz` (used by the program) and `data/calibration.txt` (readable summary).
+
+**Result** (webcam at 1280×720):
+
+| fx, fy (px) | cx, cy (px) | k1, k2, k3 | p1, p2 | RMS (px) |
+|---|---|---|---|---|
+| 825.35, 824.40 | 646.95, 351.14 | 0.0141, −0.1609, 0.1466 | 0.0027, 0.0004 | 0.384 |
+
+On average, the corners predicted by the model land 0.38 px away from the detected ones. Calibrating again without a quarter of the photos and measuring the error on those gives 0.39 px, so the model is not just fitting the photos it has seen. The calibration is only valid for this camera at 1280×720.
 
 ## Hardware and environment
 
@@ -177,7 +193,7 @@ We plan to reuse the code and approach from the course labs wherever it fits:
 conda activate voi-lab
 ```
 
-Once there is code, we will add a `requirements.txt` with the exact libraries it uses, together with instructions on how to run each part.
+`requirements.txt` lists the exact libraries the code uses so far. We will add instructions on how to run each part as they are built.
 
 ## Repository structure (planned)
 
@@ -190,9 +206,9 @@ This is the structure we plan to follow. It may change as the project grows.
 ├── main.py                  # main loop: security -> game
 ├── src/
 │   ├── camara.py            # open the camera, FPS, undistort
-│   ├── calibracion/
-│   │   ├── capturar.py      # saves chessboard photos with a key press
-│   │   └── calibrar.py      # computes K, dist, rms -> data/calibracion.npz
+│   ├── calibration/
+│   │   ├── capture.py       # saves chessboard photos with a key press
+│   │   └── calibrate.py     # computes K, dist, rms -> data/calibration.npz
 │   ├── seguridad/
 │   │   ├── tarjetas.py      # generates the PDF with the 10 cards
 │   │   ├── detector.py      # frame + homography + 7 segments
@@ -203,7 +219,7 @@ This is the structure we plan to follow. It may change as the project grows.
 │       ├── circuito.py      # drawing, road mask, stops, traffic lights, checkpoints
 │       ├── coche.py         # simple physics
 │       └── juego.py         # Juego class, timer, penalties, leaderboard
-├── data/                    # calibracion.npz, matriculas.json, ranking.json, chessboard photos
+├── data/                    # calibration.npz, matriculas.json, ranking.json (chessboard photos stay local)
 └── docs/                    # report figures, block diagram
 ```
 

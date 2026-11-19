@@ -1,0 +1,10 @@
+Image: 1280x720 px
+Chessboard: 8x6 inner corners, 24.29 mm squares
+Photos used: 28
+
+fx = 825.35 px   fy = 824.40 px
+cx = 646.95 px   cy = 351.14 px
+k1 = 0.0141   k2 = -0.1609   k3 = 0.1466
+p1 = 0.00269   p2 = 0.00039
+
+Reprojection RMS = 0.3843 px
