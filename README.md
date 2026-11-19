@@ -123,32 +123,32 @@ These are the rules we agreed on so that the modules fit together:
 - **One loop and one OpenCV window.** Each frame, the camera is read, processed and everything (game, small camera view, tracker box, FPS) is drawn into a single image shown with `imshow`. No Tkinter, no pygame, no extra threads.
 - The game is drawn with OpenCV primitives (`rectangle`, `circle`, `fillPoly`, `putText`) on top of a background image of the track. A **mask** of the track tells which pixels are road.
 - The game physics use the **real `dt`** between frames, so the car's speed does not depend on the FPS.
-- Registered license plates are stored in `data/matriculas.json` and the leaderboard in `data/ranking.json`.
+- Registered license plates are stored in `data/plates.json` and the leaderboard in `data/leaderboard.json`.
 - Calibration parameters are stored in `data/calibration.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
 - The code has to be fast: no per-pixel loops in Python, and working on downscaled images whenever possible.
 
 ### Module interfaces
 
-These planned interfaces let us work on different modules in parallel without getting in each other's way. Code identifiers are in Spanish (`giro` = steering, `acelerador` = throttle, `matriculas` = license plates).
+These planned interfaces let us work on different modules in parallel without getting in each other's way. All code identifiers are in English.
 
 ```python
 # What the tracker (or the keyboard, at first) gives the game on every frame, per player
 @dataclass
-class Controles:
-    giro: float        # -1 (full left) .. +1 (full right)
-    acelerador: float  # -1 (full brake) .. 0 (keep speed) .. +1 (full throttle)
-    visible: bool      # False if the wheel is lost -> the game brakes the car
+class Controls:
+    steering: float  # -1 (full left) .. +1 (full right)
+    throttle: float  # -1 (full brake) .. 0 (keep speed) .. +1 (full throttle)
+    visible: bool    # False if the wheel is lost -> the game brakes the car
 
 # Game
-class Juego:
-    def __init__(self, matriculas: list[str]): ...  # 1 or 2 players
-    def actualizar(self, controles: list[Controles], dt: float) -> None: ...
-    def dibujar(self) -> np.ndarray: ...  # BGR image of the track, to paste into the window
-    def terminado(self) -> bool: ...
-    def tiempos(self) -> dict[str, float]: ...  # license plate -> final time (with penalties)
+class Game:
+    def __init__(self, plates: list[str]): ...  # 1 or 2 players
+    def update(self, controls: list[Controls], dt: float) -> None: ...
+    def draw(self) -> np.ndarray: ...  # BGR image of the track, to paste into the window
+    def finished(self) -> bool: ...
+    def times(self) -> dict[str, float]: ...  # license plate -> final time (with penalties)
 
 # Security
-def procesar_frame_seguridad(frame_bgr) -> EstadoSeguridad: ...  # digits read, full plate or None, on-screen message
+def process_security_frame(frame_bgr) -> SecurityState: ...  # digits read, full plate or None, on-screen message
 ```
 
 ### Building on the course labs
@@ -186,7 +186,7 @@ On average, the corners predicted by the model land 0.38 px away from the detect
 ## Hardware and environment
 
 - **Camera:** the built-in webcam of Rodrigo's laptop (Windows, index 0, `cv2.CAP_DSHOW`, 1280×720, about 30 FPS measured). It is used for calibration, for tuning the wheel colors and for recording the demo.
-- **The game has to be able to run on its own, without a camera,** using a keyboard test mode that goes through the same `Controles` interface. This lets us develop the game on a computer without a webcam.
+- **The game has to be able to run on its own, without a camera,** using a keyboard test mode that goes through the same `Controls` interface. This lets us develop the game on a computer without a webcam.
 - **Python 3.9** with the course's conda environment, `voi-lab`: `opencv-python==4.8.0.76`, `numpy==1.26.0`, `matplotlib`, `scipy` and `scikit-image`. We won't add other dependencies without agreeing on it first.
 
 ```bash
@@ -205,21 +205,21 @@ This is the structure we plan to follow. It may change as the project grows.
 ├── requirements.txt
 ├── main.py                  # main loop: security -> game
 ├── src/
-│   ├── camara.py            # open the camera, FPS, undistort
+│   ├── camera.py            # open the camera, FPS, undistort
 │   ├── calibration/
 │   │   ├── capture.py       # saves chessboard photos with a key press
 │   │   └── calibrate.py     # computes K, dist, rms -> data/calibration.npz
-│   ├── seguridad/
-│   │   ├── tarjetas.py      # generates the PDF with the 10 cards
+│   ├── security/
+│   │   ├── cards.py         # generates the PDF with the 10 cards
 │   │   ├── detector.py      # frame + homography + 7 segments
-│   │   └── decodificador.py # sequence, registration, reset
+│   │   └── decoder.py       # sequence, registration, reset
 │   ├── tracker/
-│   │   └── volante.py       # HSV + Kalman -> Controles
-│   └── juego/
-│       ├── circuito.py      # drawing, road mask, stops, traffic lights, checkpoints
-│       ├── coche.py         # simple physics
-│       └── juego.py         # Juego class, timer, penalties, leaderboard
-├── data/                    # calibration.npz, matriculas.json, ranking.json (chessboard photos stay local)
+│   │   └── wheel.py         # HSV + Kalman -> Controls
+│   └── game/
+│       ├── track.py         # drawing, road mask, stops, traffic lights, checkpoints
+│       ├── car.py           # simple physics
+│       └── game.py          # Game class, timer, penalties, leaderboard
+├── data/                    # calibration.npz, plates.json, leaderboard.json (chessboard photos stay local)
 └── docs/                    # report figures, block diagram
 ```
 
@@ -229,9 +229,9 @@ This is our initial split. We may change it along the way.
 
 | Who | Modules | Branches |
 |---|---|---|
-| **Rodrigo** | Calibration, seven-segment cards (design and printing), digit detector, decoder, registering new plates | `calibracion`, `seguridad` |
-| **Claudia** | The whole game: track, car, stops, traffic lights, checkpoints, timer and leaderboard. At first it is controlled with the **keyboard** so it doesn't depend on the wheel. | `juego` |
-| **Both** | Wheel tracker, integration in `main.py`, two-player mode, report, video and README | `tracker`, `integracion` |
+| **Rodrigo** | Calibration, seven-segment cards (design and printing), digit detector, decoder, registering new plates | `calibration`, `security` |
+| **Claudia** | The whole game: track, car, stops, traffic lights, checkpoints, timer and leaderboard. At first it is controlled with the **keyboard** so it doesn't depend on the wheel. | `game` |
+| **Both** | Wheel tracker, integration in `main.py`, two-player mode, report, video and README | `tracker`, `integration` |
 
 ### Roadmap
 
@@ -244,10 +244,11 @@ This is our initial split. We may change it along the way.
 
 ### How we work with Git
 
-- One branch per module (`calibracion`, `seguridad`, `tracker`, `juego`, `integracion`), merged into `main` once it works.
+- One branch per module (`calibration`, `security`, `tracker`, `game`, `integration`), merged into `main` once it works.
 - Always `git pull` before starting.
 - Nobody edits another module's files at the same time.
 - Small commits from both of us, with clear messages.
+- Code, comments, this README and commit messages are in English.
 - We don't upload the professors' PDFs and slides, the demo video (it will be linked here) or `__pycache__`.
 
 ## Deliverables
