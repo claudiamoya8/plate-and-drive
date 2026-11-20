@@ -121,7 +121,7 @@ LIVE      every frame:  webcam ──► undistort (remap) ──► current pha
 These are the rules we agreed on so that the modules fit together:
 
 - **One loop and one OpenCV window.** Each frame, the camera is read, processed and everything (game, small camera view, tracker box, FPS) is drawn into a single image shown with `imshow`. No Tkinter, no pygame, no extra threads.
-- The game is drawn with OpenCV primitives (`rectangle`, `circle`, `fillPoly`, `putText`) on top of a background image of the track. A **mask** of the track tells which pixels are road.
+- The game is drawn with the drawing functions used in the course labs (`line`, `circle`, `rectangle`): the road is a chain of very thick `line` segments, so `fillPoly` is not needed. Texts (FPS, license plates) use `putText` through `put_text` and `draw_fps` in `src/camera.py`. A separate one-channel mask, drawn with the same thick lines, tells which pixels are road.
 - The game physics use the **real `dt`** between frames, so the car's speed does not depend on the FPS.
 - Registered license plates are stored in `data/plates.json` and the leaderboard in `data/leaderboard.json`.
 - Calibration parameters are stored in `data/calibration.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
@@ -206,6 +206,7 @@ This is the structure we plan to follow. It may change as the project grows.
 ├── main.py                  # main loop: security -> game
 ├── src/
 │   ├── camera.py            # open the camera, FPS, undistort
+│   ├── controls.py          # Controls class and keyboard control (test mode without camera)
 │   ├── calibration/
 │   │   ├── capture.py       # saves chessboard photos with a key press
 │   │   └── calibrate.py     # computes K, dist, rms -> data/calibration.npz
@@ -218,7 +219,8 @@ This is the structure we plan to follow. It may change as the project grows.
 │   └── game/
 │       ├── track.py         # drawing, road mask, stops, traffic lights, checkpoints
 │       ├── car.py           # simple physics
-│       └── game.py          # Game class, timer, penalties, leaderboard
+│       ├── game.py          # Game class, timer, penalties, leaderboard
+│       └── demo.py          # playable keyboard demo without camera: python -m src.game.demo
 ├── data/                    # calibration.npz, plates.json, leaderboard.json (chessboard photos stay local)
 └── docs/                    # report figures, block diagram
 ```
