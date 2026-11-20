@@ -157,7 +157,7 @@ We plan to reuse the code and approach from the course labs wherever it fits:
 
 - **Lab 2:** calibration with `findChessboardCorners`, `cornerSubPix` and `calibrateCamera`.
 - **Lab 3:** HSV color segmentation and morphological operators.
-- **Lab 4:** edges, corners and Hough transform.
+- **Lab 4:** edges, corners, Hough transform, and the homography from SIFT matching (`findHomography` + `perspectiveTransform`), which we use to read the cards.
 - **Lab 5:** background subtraction, optical flow, Kalman filter and meanShift.
 
 ## Camera calibration
@@ -166,8 +166,8 @@ Done offline, once, before running the system. It follows the method from Lab 2,
 
 ```bash
 conda activate voi-lab
-python src/calibration/capture.py     # live view; SPACE saves a photo (only if the whole chessboard is visible), q quits
-python src/calibration/calibrate.py   # computes K, the distortion coefficients and the RMS error
+python -m src.calibration.capture     # live view; SPACE saves a photo (only if the whole chessboard is visible), q quits
+python -m src.calibration.calibrate   # computes K, the distortion coefficients and the RMS error
 ```
 
 - **Chessboard:** `damero_8x6_25mm_A4.pdf`, 9×7 squares (8×6 inner corners), stuck to a rigid folder. Our printer shrank it slightly: seven squares measure 170 mm, so we use **24.29 mm** per square instead of 25 mm.
@@ -244,7 +244,8 @@ This is our initial split. We may change it along the way.
 
 ### How we work with Git
 
-- One branch per module (`calibration`, `security`, `tracker`, `game`, `integration`), merged into `main` once it works.
+- One branch per module (`calibration`, `camera`, `security`, `tracker`, `game`, `integration`), merged into `main` once it works.
+- Every script is run from the repository root with `python -m`, for example `python -m src.camera`.
 - Always `git pull` before starting.
 - Nobody edits another module's files at the same time.
 - Small commits from both of us, with clear messages.
