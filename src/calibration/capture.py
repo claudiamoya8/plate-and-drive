@@ -13,8 +13,8 @@ Photos are saved in data/chessboard_photos/, which is not uploaded to GitHub
 (it is in .gitignore because people appear in the photos).
 
 Usage, from the repository root:
-    python src/calibration/capture.py                      # camera 0, 1280x720
-    python src/calibration/capture.py --camera 1 --width 1280 --height 720
+    python -m src.calibration.capture                      # camera 0, 1280x720
+    python -m src.calibration.capture --camera 1 --width 1280 --height 720
 """
 import argparse
 import glob

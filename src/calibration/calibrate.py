@@ -11,8 +11,8 @@ Reads the photos in data/chessboard_photos/ and saves:
 The photos and data/calibration_results/ are not uploaded to GitHub (people appear in them).
 
 Usage, from the repository root:
-    python src/calibration/calibrate.py               # 8x6 chessboard, 24.29 mm squares (measured)
-    python src/calibration/calibrate.py --square 25   # if another chessboard is printed with another size
+    python -m src.calibration.calibrate               # 8x6 chessboard, 24.29 mm squares (measured)
+    python -m src.calibration.calibrate --square 25   # if another chessboard is printed with another size
 """
 import argparse
 import glob

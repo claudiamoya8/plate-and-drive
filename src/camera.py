@@ -13,7 +13,7 @@ Frames are NOT mirrored here. The cards must be read on the original image
 (a mirrored 2 looks like a 5), so mirroring is only done when a frame is shown.
 
 Demo, from the repository root:
-    python src/camera.py
+    python -m src.camera
 Keys: u = undistortion on/off (to compare), q / ESC = quit.
 """
 import os
