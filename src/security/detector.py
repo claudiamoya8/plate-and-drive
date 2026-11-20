@@ -132,6 +132,25 @@ def detect_cards(frame):
     return found
 
 
+def draw_cards(frame, found):
+    """Returns a mirrored copy of the frame with every card outlined and its digit written.
+
+    Green: card read. Orange: card found but not readable ("?"). The dot marks the top-left corner.
+    """
+    w = frame.shape[1]
+    view = frame.copy()
+    colors = [(0, 255, 0) if card.digit is not None else (0, 165, 255) for card in found]
+    for card, color in zip(found, colors):
+        cv2.polylines(view, [card.corners.astype(np.int32)], True, color, 3)   # as in Lab 4
+        cv2.circle(view, tuple(int(v) for v in card.corners[0]), 8, color, -1)  # top-left corner
+    view = cv2.flip(view, 1)   # mirror only for display; texts are written after flipping
+    for card, color in zip(found, colors):
+        x = int(w - 1 - card.corners[:, 0].max())   # left edge of the card in the mirrored view
+        y = int(card.corners[:, 1].min()) - 15
+        put_text(view, str(card.digit) if card.digit is not None else "?", (x, max(y, 30)), color, 1.5)
+    return view
+
+
 def main():
     cap = open_camera()
     if cap is None:
@@ -157,16 +176,8 @@ def main():
             frame = undistort(frame, maps)
             found = detect_cards(frame)
 
-            view = cv2.cvtColor(binarize(frame), cv2.COLOR_GRAY2BGR) if show_binary else frame.copy()
-            colors = [(0, 255, 0) if card.digit is not None else (0, 165, 255) for card in found]  # green / orange
-            for card, color in zip(found, colors):
-                cv2.polylines(view, [card.corners.astype(np.int32)], True, color, 3)   # as in Lab 4
-                cv2.circle(view, tuple(int(v) for v in card.corners[0]), 8, color, -1)  # top-left corner
-            view = cv2.flip(view, 1)   # mirror only for display; texts are written after flipping
-            for card, color in zip(found, colors):
-                x = int(w - 1 - card.corners[:, 0].max())   # left edge of the card in the mirrored view
-                y = int(card.corners[:, 1].min()) - 15
-                put_text(view, str(card.digit) if card.digit is not None else "?", (x, max(y, 30)), color, 1.5)
+            shown = cv2.cvtColor(binarize(frame), cv2.COLOR_GRAY2BGR) if show_binary else frame
+            view = draw_cards(shown, found)
             draw_fps(view, fps_counter.tick())
             cv2.imshow(window_name, view)
 
