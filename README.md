@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **This is our initial proposal, not the final documentation.** It describes the idea we are starting from. Nothing is implemented yet, and some of the details below will probably change as we build and test the system. We will update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`) and the security system are done; the calibration and the security system have their own sections below. The game and the steering wheel tracker are still being built, so those parts describe the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -42,21 +42,7 @@ This is the plan we are starting from.
 - To get in, you show the camera **4 printed cards**, one per digit, in order.
 - Each card is a **seven-segment digit**, like the ones on a digital clock: black bars on a white background, inside a **thick black frame**, with a **small mark in the top-left corner** to tell the orientation and a white margin around everything.
 
-**How a card is read:**
-
-1. Threshold the image and look for contours with 4 corners (the frame).
-2. Straighten the card with a **homography** (`getPerspectiveTransform` + `warpPerspective`).
-3. Out of the 4 possible rotations, keep the one that puts the orientation mark in the top-left corner.
-4. Check each of the 7 segment areas: a segment is "on" if more than half of its pixels are black.
-5. Look up the resulting 7-bit pattern in a table. If it is not one of the 10 digits, the reading is discarded.
-
-**How the decoder works:**
-
-- A digit is accepted once it has been read the same way for about 0.5 s.
-- You have to **take the card away** before showing the next one. That is what makes repeated digits work (for example `1123`).
-- It stores up to 4 digits. If the plate is registered, you go on to the game. If it is not, the sequence is cleared and you start again.
-- If no card is seen for a while, the sequence is forgotten (reset).
-- Cards are always read on the **original** frame. The mirror effect (`flip`) is only applied when the image is displayed; otherwise a 2 would be read as a 5.
+This part is already built: how the cards are read and how the decoder works is explained in [Security system (access)](#security-system-access).
 
 ### 2. The game: time trial
 
@@ -147,16 +133,22 @@ class Game:
     def finished(self) -> bool: ...
     def times(self) -> dict[str, float]: ...  # license plate -> final time (with penalties)
 
-# Security
-def process_security_frame(frame_bgr) -> SecurityState: ...  # digits read, full plate or None, on-screen message
+# Security (already built, in src/security/)
+def detect_cards(frame_bgr) -> list[Card]: ...   # Card(digit, corners): digit 0-9, or None if it can't be read
+class SequenceDecoder:
+    def update(self, cards: list[Card]) -> SecurityState: ...  # SecurityState(digits, granted, message)
+    def reset(self) -> None: ...
+    def start_registration(self) -> None: ...   # the next 4 digits are saved as a new car
+# SecurityState.granted is the plate once access is granted, and None until then
 ```
 
 ### Building on the course labs
 
 We plan to reuse the code and approach from the course labs wherever it fits:
 
+- **Lab 1:** HSV color segmentation with `inRange`, masks and rotations with `warpAffine`.
 - **Lab 2:** calibration with `findChessboardCorners`, `cornerSubPix` and `calibrateCamera`.
-- **Lab 3:** HSV color segmentation and morphological operators.
+- **Lab 3:** Gaussian blur, Sobel, Canny, binarization, dilation and erosion.
 - **Lab 4:** edges, corners, Hough transform, and the homography from SIFT matching (`findHomography` + `perspectiveTransform`), which we use to read the cards.
 - **Lab 5:** background subtraction, optical flow, Kalman filter and meanShift.
 
@@ -182,6 +174,38 @@ python -m src.calibration.calibrate   # computes K, the distortion coefficients 
 | 825.35, 824.40 | 646.95, 351.14 | 0.0141, −0.1609, 0.1466 | 0.0027, 0.0004 | 0.384 |
 
 On average, the corners predicted by the model land 0.38 px away from the detected ones. Calibrating again without a quarter of the photos and measuring the error on those gives 0.39 px, so the model is not just fitting the photos it has seen. The calibration is only valid for this camera at 1280×720.
+
+## Security system (access)
+
+To unlock a car, you show the webcam the four digits of its license plate, one card at a time. Everything is in `src/security/`:
+
+```bash
+python -m src.security.cards      # writes docs/cards.pdf: the 10 cards, ready to print
+python -m src.security.detector   # live view: outlines every card and writes its digit (b = binary image, q = quit)
+python -m src.security.decoder    # the whole access (n = register a new car, r = reset, q = quit)
+```
+
+**The cards.** Each card draws one digit the way a digital clock does: seven black bars on white, inside a thick black frame, with a small square in the top-left corner so we know which way up the card is. The layout is defined only once, in `cards.py`, and the detector reads the same numbers, so the two can never get out of step. The printed size does not matter, only the proportions. The cards can also be shown on a tablet screen, which is how we tested them before printing.
+
+**Reading a card** (`detector.py`):
+
+1. Grey image, Gaussian blur and binarization, as in Lab 3. Instead of a fixed threshold of 127, the threshold is chosen in every frame with Otsu's method, because the light changes in live video and a dimly lit card would disappear.
+2. `findContours` + `approxPolyDP` keep the four-sided shapes. These are not in the labs; they are the simple way to find a quadrilateral.
+3. For each one, `findHomography` (Lab 4) maps the card layout onto the image, and `perspectiveTransform` (Lab 4) takes a grid of points from each zone of the card to the image, where we check whether they fall on black. The card is never straightened.
+4. It only counts as one of our cards if the four sides of the frame are black and the mark is in one corner with the other three corners white. Trying each of the four corners as the top-left one tells us how the card is rotated, so a 6 upside down is not read as a 9.
+5. A segment is on if at least 75 % of its points are black, and off if at most 25 % are. If one is in between (a finger, a reflection), the card is marked as unreadable instead of guessing, because some digits differ in a single segment, like 8 and 0.
+
+Cards are always read on the original frame. The image is only mirrored when it is shown on screen; otherwise a 2 would be read as a 5.
+
+**The decoder** (`decoder.py`) is a small state machine:
+
+- A digit is accepted once it has been read the same way for 0.5 s, so one wrong reading never counts.
+- Between two digits the card has to leave the image for 0.3 s. That is what makes repeated digits work (`1123` needs only one card of each number), and a single missed frame is not mistaken for the card being taken away.
+- With 4 digits, the plate is looked up in `data/plates.json`. If it is there, access is granted; if not, the screen says so and the sequence starts again.
+- An unfinished plate is forgotten after 7 s without any card, and `r` resets it at any time.
+- Extension: after pressing `n`, the next 4 digits are saved as a new car.
+
+**Results so far.** On the laptop, the whole access loop runs at about 30 FPS, which is the camera's limit; reading the cards takes about 3 ms per frame. With simulated camera views (the ten digits at six angles, with perspective, blur and noise), the detector read 60 cards out of 60. It never gave a wrong digit when a segment was half covered, and it found no false cards in 40 cluttered scenes or in 150 real frames of the room.
 
 ## Hardware and environment
 
@@ -231,7 +255,7 @@ This is our initial split. We may change it along the way.
 
 | Who | Modules | Branches |
 |---|---|---|
-| **Rodrigo** | Calibration, seven-segment cards (design and printing), digit detector, decoder, registering new plates | `calibration`, `security` |
+| **Rodrigo** | Calibration, shared camera module, seven-segment cards (design and printing), digit detector, decoder, registering new plates | `calibration`, `camera`, `security` |
 | **Claudia** | The whole game: track, car, stops, traffic lights, checkpoints, timer and leaderboard. At first it is controlled with the **keyboard** so it doesn't depend on the wheel. | `game` |
 | **Both** | Wheel tracker, integration in `main.py`, two-player mode, report, video and README | `tracker`, `integration` |
 
@@ -258,7 +282,7 @@ This is our initial split. We may change it along the way.
 
 - **This GitHub repository**, public, with a complete and well-structured README.
 - **A demo video** supported by slides or a poster. The **FPS are shown on screen at all times** and everything is processed in real time.
-- **A report** of at most **5 pages**, including the link to this repository: introduction, methodology (calibration, block diagram, sequence of image transformations, security system, proposed system), results and future work, with a bibliography and a note on the use of an AI assistant.
+- **A report** of at most **5 pages**, including the link to this repository: introduction, methodology (calibration, block diagram, sequence of image transformations, security system, proposed system), results and future work, with a bibliography.
 - Everything packed in `LabProject_Rodrigo_Claudia.zip`.
 
 ## Demo
