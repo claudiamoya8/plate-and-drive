@@ -1,13 +1,14 @@
 """Keyboard demo of the game, without the camera.
 
 The game as it will be played, but with the keyboard instead of the steering wheel: the
-countdown, one lap with its checkpoints and timer, and the finish. Key m shows the masks of
+countdown and then as many laps as you want, each valid lap saved in data/leaderboard.json.
+Key e ends the turn and shows the leaderboard, as main.py will do. Key m shows the masks of
 the track, to check them.
 
 Usage, from the repository root:
     python -m src.game.demo
-Keys: W/S/A/D = drive (accelerate, brake, left, right), r = start again, m = masks on/off,
-q / ESC (or closing the window) = quit.
+Keys: W/S/A/D = drive (accelerate, brake, left, right), e = end the turn, r = start again,
+m = masks on/off, q / ESC (or closing the window) = quit.
 """
 import time
 
@@ -16,7 +17,7 @@ import numpy as np
 
 from src.camera import FpsCounter, draw_fps, put_text
 from src.controls import KeyboardControls
-from src.game.game import Game
+from src.game.game import Game, draw_leaderboard, leaderboard
 from src.game.track import (CAMERA_CORNER, FPS_CORNER, ZONE_CHECKPOINTS, ZONE_FINISH, ZONE_LIGHT_LINE,
                             ZONE_STOP_AREA, ZONE_STOP_LINE)
 
@@ -60,19 +61,27 @@ def main():
     window_name = "Plate and Drive - demo"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)   # resizable, as in the course's test.py
     show_masks = False
+    turn_over = False   # True after key e: the game stops and the leaderboard is shown
+    rows = []
     key = 255
     t_prev = time.perf_counter()
     while True:
         t = time.perf_counter()
         dt, t_prev = t - t_prev, t   # real dt between frames
-        game.update(keyboard.update(key, dt), dt)
+        if not turn_over:
+            game.update(keyboard.update(key, dt), dt)
 
-        if show_masks:
+        if turn_over:
+            frame = game.track.draw("green")   # the track and the car, without the scoreboard and the panels
+            game.car.draw(frame)
+            draw_leaderboard(frame, rows)
+        elif show_masks:
             frame = masks_view.copy()
             game.car.draw(frame)
         else:
             frame = game.draw()
-        put_text(frame, "W/S/A/D: drive   r: start again   m: masks   q: quit", (20, 710), (255, 255, 255), 0.55)
+        put_text(frame, "W/S/A/D: drive   e: end the turn   r: start again   m: masks   q: quit", (20, 710),
+                 (255, 255, 255), 0.55)
         draw_fps(frame, fps_counter.tick())   # the FPS are written here, not inside Game.draw()
         cv2.imshow(window_name, frame)
 
@@ -81,9 +90,13 @@ def main():
             break
         if key in (ord("m"), ord("M")):
             show_masks = not show_masks
+        if key in (ord("e"), ord("E")) and not turn_over:
+            turn_over = True
+            rows = leaderboard()   # the file is read once, when the turn ends
         if key in (ord("r"), ord("R")):
             game = Game([PLATE])
             keyboard = KeyboardControls(players=1)
+            turn_over = False
         # Closing the window with its X also quits, as in Lab 1 (otherwise imshow would open it again)
         if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
             break
