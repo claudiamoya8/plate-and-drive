@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`) and the security system are done; the calibration and the security system have their own sections below. The game and the steering wheel tracker are still being built, so those parts describe the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system and the steering wheel tracker are done; the calibration, the security system and the tracker have their own sections below. The game is still being built, so that part describes the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -58,8 +58,8 @@ This part is already built: how the cards are read and how the decoder works is 
 
 ### 3. Driving with the steering wheel (tracker)
 
-- Our first idea for the wheel is a **cardboard plate with two color marks**, one at the top and one at the bottom, each a different color.
-- The tracker segments both marks by color in **HSV**, finds their centers, draws the **bounding box around the wheel** and uses a **Kalman filter** to keep going through short occlusions.
+- The wheel is a **white plastic plate with two color marks**, one at the top and one at the bottom, each a different color.
+- The tracker follows both marks by color, draws the **bounding box around the wheel** and keeps going through short occlusions. How it works is explained in [Steering wheel tracker](#steering-wheel-tracker).
 - **Steering:** the angle of the line joining the two marks.
 - **Throttle and brake:** the distance in pixels between the two marks, which grows as you bring the wheel closer to the camera. There are three zones:
   - close → accelerate;
@@ -68,7 +68,7 @@ This part is already built: how the cards are read and how the decoder works is 
 
   That is how you stop at a stop sign. **There are no hand gestures.**
 - If the wheel disappears from the image, the car brakes on its own.
-- We also want a small tool to tune the color ranges to the lighting at each moment.
+- A small tool tunes the color ranges to the lighting of the room.
 
 ### 4. Extensions
 
@@ -98,7 +98,7 @@ LIVE      every frame:  webcam ──► undistort (remap) ──► current pha
 
           Phase 1 · Security   card detector ──► sequence decoder ──► registered plate? ──yes──► Phase 2
 
-          Phase 2 · Game       tracker (HSV + Kalman) ──► controls ──► game update (dt) ──► track
+          Phase 2 · Game       tracker (HSV + meanShift + Kalman) ──► controls ──► game update (dt) ──► track
                                shown together with the small camera view and the tracker box
 ```
 
@@ -107,7 +107,7 @@ LIVE      every frame:  webcam ──► undistort (remap) ──► current pha
 These are the rules we agreed on so that the modules fit together:
 
 - **One loop and one OpenCV window.** Each frame, the camera is read, processed and everything (game, small camera view, tracker box, FPS) is drawn into a single image shown with `imshow`. No Tkinter, no pygame, no extra threads.
-- The game is drawn with OpenCV primitives (`rectangle`, `circle`, `fillPoly`, `putText`) on top of a background image of the track. A **mask** of the track tells which pixels are road.
+- The game is drawn with the drawing functions used in the course labs (`line`, `circle`, `rectangle`): the road is a chain of very thick `line` segments, so `fillPoly` is not needed. Texts (FPS, license plates) use `putText` through `put_text` and `draw_fps` in `src/camera.py`. A separate one-channel mask, drawn with the same thick lines, tells which pixels are road.
 - The game physics use the **real `dt`** between frames, so the car's speed does not depend on the FPS.
 - Registered license plates are stored in `data/plates.json` and the leaderboard in `data/leaderboard.json`.
 - Calibration parameters are stored in `data/calibration.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
@@ -140,17 +140,24 @@ class SequenceDecoder:
     def reset(self) -> None: ...
     def start_registration(self) -> None: ...   # the next 4 digits are saved as a new car
 # SecurityState.granted is the plate once access is granted, and None until then
+
+# Wheel tracker (already built, in src/tracker/)
+class WheelTracker:
+    def __init__(self, players: int = 1): ...         # with 2 players, each one has half of the image
+    def update(self, view_bgr) -> list[Controls]: ...  # view = the mirrored camera image, as the players see it
+    def set_neutral(self) -> None: ...                 # wheels straight, at a comfortable distance
+    def draw(self, view_bgr) -> np.ndarray: ...        # box, marks and line of every wheel
 ```
 
 ### Building on the course labs
 
-We plan to reuse the code and approach from the course labs wherever it fits:
+Wherever it fits, we build on the code and methods of the course labs. This is what we take from each one:
 
-- **Lab 1:** HSV color segmentation with `inRange`, masks and rotations with `warpAffine`.
-- **Lab 2:** calibration with `findChessboardCorners`, `cornerSubPix` and `calibrateCamera`.
-- **Lab 3:** Gaussian blur, Sobel, Canny, binarization, dilation and erosion.
-- **Lab 4:** edges, corners, Hough transform, and the homography from SIFT matching (`findHomography` + `perspectiveTransform`), which we use to read the cards.
-- **Lab 5:** background subtraction, optical flow, Kalman filter and meanShift.
+- **Lab 1:** HSV color segmentation with `inRange`, the trackbar tool to find color ranges, and rotations with `warpAffine`.
+- **Lab 2:** calibration with `findChessboardCorners`, `cornerSubPix` and `calibrateCamera`, and undistortion with `initUndistortRectifyMap` + `remap`.
+- **Lab 3:** Gaussian blur and binarization for the cards, and erosion and dilation for the wheel marks.
+- **Lab 4:** the homography from SIFT matching (`findHomography` + `perspectiveTransform`), which we use to read the cards.
+- **Lab 5:** the live video loop, the Kalman filter and meanShift for the wheel tracker, and the drawing functions (`line`, `circle`, `rectangle`).
 
 ## Camera calibration
 
@@ -189,9 +196,9 @@ python -m src.security.decoder    # the whole access (n = register a new car, r 
 
 **Reading a card** (`detector.py`):
 
-1. Grey image, Gaussian blur and binarization, as in Lab 3. Instead of a fixed threshold of 127, the threshold is chosen in every frame with Otsu's method, because the light changes in live video and a dimly lit card would disappear.
+1. Grey image, Gaussian blur and binarization. Instead of the fixed threshold of 127 we used in Lab 3, the threshold is chosen in every frame with Otsu's method, because the light changes in live video and a dimly lit card would disappear.
 2. `findContours` + `approxPolyDP` keep the four-sided shapes. These are not in the labs; they are the simple way to find a quadrilateral.
-3. For each one, `findHomography` (Lab 4) maps the card layout onto the image, and `perspectiveTransform` (Lab 4) takes a grid of points from each zone of the card to the image, where we check whether they fall on black. The card is never straightened.
+3. For each one, `findHomography` maps the card layout onto the image, and `perspectiveTransform` takes a grid of points from each zone of the card to the image, where we check whether they fall on black. The card is never straightened.
 4. It only counts as one of our cards if the four sides of the frame are black and the mark is in one corner with the other three corners white. Trying each of the four corners as the top-left one tells us how the card is rotated, so a 6 upside down is not read as a 9.
 5. A segment is on if at least 75 % of its points are black, and off if at most 25 % are. If one is in between (a finger, a reflection), the card is marked as unreadable instead of guessing, because some digits differ in a single segment, like 8 and 0.
 
@@ -206,6 +213,36 @@ Cards are always read on the original frame. The image is only mirrored when it 
 - Extension: after pressing `n`, the next 4 digits are saved as a new car.
 
 **Results so far.** On the laptop, the whole access loop runs at about 30 FPS, which is the camera's limit; reading the cards takes about 3 ms per frame. With simulated camera views (the ten digits at six angles, with perspective, blur and noise), the detector read 60 cards out of 60. It never gave a wrong digit when a segment was half covered, and it found no false cards in 40 cluttered scenes or in 150 real frames of the room.
+
+## Steering wheel tracker
+
+Each player drives with a white plastic plate held like a steering wheel, with the hands on the sides. On its flat part there are two colored circles about 5 cm wide, one at the top and one at the bottom, 9 cm apart: green at the top and magenta at the bottom, printed from `docs/wheel_marks.pdf`. Everything is in `src/tracker/`:
+
+```bash
+python -m src.tracker.marks   # writes docs/wheel_marks.pdf: the colored marks, ready to print
+python -m src.tracker.tune    # tunes the colors of the marks (1 = top mark, 2 = bottom mark, s = save, q = quit)
+python -m src.tracker.wheel   # live demo (n = neutral position, p = 1 or 2 players, m = masks, q = quit)
+```
+
+**Tuning the colors** (`tune.py`). It is the trackbar tool we used in Lab 1, working on the live camera. Six trackbars set the HSV range of one mark, and the window shows the camera next to the pixels the tracker will take as that mark. The ranges are saved in `data/wheel_colors.json`. They depend on the light, so they have to be tuned again wherever we play. Our first marks, painted with highlighters, were too pale: under the warm light of our room the green looked lime (hue 29–35 instead of the usual 35–85), the pink had a saturation of only about 75 out of 255, and the marks disappeared when the wheel came close or went far, because the camera changes its exposure. That is why we now print them: printed colors are much more saturated.
+
+**Finding and following the marks** (`wheel.py`):
+
+1. HSV image and one mask per mark color with `inRange`.
+2. Erosion and then dilation with a 3×3 kernel, so specks of a few pixels disappear and the marks keep their size. We use `cv2.erode` and `cv2.dilate` instead of the hand-written loops of Lab 3, which would be far too slow for live video.
+3. While a wheel is not being followed (at the start, or after losing it), `findContours`, which we also use for the cards, finds every blob of each color. The wheel is the pair of blobs, one green and one magenta, placed most like the marks on the plate: about the same size and about 1.8 diameters apart. Because every blob is looked at, other green or magenta things in the room do not stop the wheel from being found.
+4. Each mark is then followed with a Kalman filter and `meanShift`. The filter, with a constant velocity model, predicts where the mark will be; `meanShift` looks for it there; and the centre it finds corrects the filter. In Lab 5 `meanShift` worked on the back projection of a hue histogram; here it works on the color mask, because the range of the mark is already known. If a hand covers a mark for a moment, its predicted position is used. After 10 frames without it (a third of a second), the wheel counts as lost and is searched for again as in step 3.
+5. The box around the wheel is drawn with `rectangle`.
+
+The wheels are tracked on the mirrored image, the one the players see, so left and right mean the same for them and for the program. With two players, each one has half of the image: player 1 on the left, player 2 on the right.
+
+**From the wheel to the car.** Everything is measured from a neutral position: the wheel straight and at a comfortable distance. In the demo it is taken with `n`; in the game it will be taken during the countdown before the start.
+
+- **Steering:** the angle of the line between the two marks. Up to 5° it counts as straight, and at 60° the steering is full.
+- **Throttle:** the distance in pixels between the marks, compared with the neutral one. Between 92 % and 108 % of it the car keeps its speed. Closer, it accelerates, with full throttle at 125 %; farther, it brakes, with a full brake at 80 %. The values grow gradually instead of jumping, so the small shaking of the hands does not make the car jerk.
+- If a wheel is lost, the game gets `Controls(0, -1, False)` and the car brakes.
+
+**Results so far.** With the real wheels the demo runs at about 30 FPS, and the tracker takes about 3.5 ms per frame. With simulated camera views (blur, noise, darker and brighter light, and a background with skin, wood and denim colors), the angle error stayed under 1.5° and the distance error under 3 % between 0.5 and 2 m, and a wheel moving away from the camera was followed up to 3.5 m. A mark covered for 8 frames was kept with an error of 0.6°. Other green or magenta objects in the room, even a sticker 16 pixels wide, neither stopped the wheel from being found nor were followed instead of a mark. When a finger covers half of a mark, the angle moves by about 7.5°, because the centre of the mark moves to its visible half.
 
 ## Hardware and environment
 
@@ -230,6 +267,7 @@ This is the structure we plan to follow. It may change as the project grows.
 ├── main.py                  # main loop: security -> game
 ├── src/
 │   ├── camera.py            # open the camera, FPS, undistort
+│   ├── controls.py          # Controls class and keyboard control (test mode without camera)
 │   ├── calibration/
 │   │   ├── capture.py       # saves chessboard photos with a key press
 │   │   └── calibrate.py     # computes K, dist, rms -> data/calibration.npz
@@ -238,13 +276,16 @@ This is the structure we plan to follow. It may change as the project grows.
 │   │   ├── detector.py      # frame + homography + 7 segments
 │   │   └── decoder.py       # sequence, registration, reset
 │   ├── tracker/
-│   │   └── wheel.py         # HSV + Kalman -> Controls
+│   │   ├── marks.py         # generates the PDF with the colored marks of the wheels
+│   │   ├── tune.py          # tunes the colors of the marks with trackbars
+│   │   └── wheel.py         # HSV + meanShift + Kalman -> Controls
 │   └── game/
 │       ├── track.py         # drawing, road mask, stops, traffic lights, checkpoints
 │       ├── car.py           # simple physics
-│       └── game.py          # Game class, timer, penalties, leaderboard
-├── data/                    # calibration.npz, plates.json, leaderboard.json (chessboard photos stay local)
-└── docs/                    # report figures, block diagram
+│       ├── game.py          # Game class, timer, penalties, leaderboard
+│       └── demo.py          # playable keyboard demo without camera: python -m src.game.demo
+├── data/                    # calibration.npz, plates.json, wheel_colors.json, leaderboard.json (chessboard photos stay local)
+└── docs/                    # cards.pdf, wheel_marks.pdf, report figures, block diagram
 ```
 
 ## Team and work split
