@@ -103,7 +103,7 @@ def chaikin(points, iterations=4):
     p = np.array(points, float)
     for _ in range(iterations):
         nxt = np.roll(p, -1, axis=0)
-        smoothed = np.empty((2 * len(p), 2))
+        smoothed = np.zeros((2 * len(p), 2))
         smoothed[0::2] = 0.75 * p + 0.25 * nxt
         smoothed[1::2] = 0.25 * p + 0.75 * nxt
         p = smoothed
@@ -138,7 +138,7 @@ class Track:
         self.centre = np.roll(centre, -first, axis=0)
         self.seg_vec = np.roll(self.centre, -1, axis=0) - self.centre   # side i goes from point i to point i + 1
         self.seg_len = np.linalg.norm(self.seg_vec, axis=1)
-        self.cum = np.concatenate([[0.0], np.cumsum(self.seg_len)])     # distance from the finish to each point
+        self.cum = np.hstack(([0.0], np.cumsum(self.seg_len)))     # distance from the finish to each point
         self.length = float(self.cum[-1])
 
         self._place_traffic_light()
@@ -200,7 +200,7 @@ class Track:
             seen on screen (the convention of cv2.getRotationMatrix2D).
         """
         p, u = self.point_at(-START_GAP / self.length)
-        angle = float(np.degrees(np.arctan2(-u[1], u[0])))
+        angle = float(np.arctan2(-u[1], u[0]) * 180 / np.pi)
         return float(p[0]), float(p[1]), angle
 
     # ---- Drawing ----

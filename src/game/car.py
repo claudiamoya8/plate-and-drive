@@ -87,7 +87,7 @@ class Car:
 
     def heading(self):
         """Unit vector of the direction the car is facing (the y axis of the image grows downwards)."""
-        a = np.radians(self.angle)
+        a = np.deg2rad(self.angle)
         return np.array([np.cos(a), -np.sin(a)])
 
     def update(self, controls, dt):
