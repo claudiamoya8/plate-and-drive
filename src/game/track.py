@@ -1,15 +1,17 @@
 """Race track of the game: the drawing, the road mask and the zones (finish, checkpoints, STOP, traffic light).
 
 The track is drawn only once, when the game starts. Every frame then copies that image
-and draws on top only what changes (the traffic light, the cars and the texts).
+and draws on top only what changes (the traffic light, the car and the texts).
 
 How it follows the course labs:
 - The road is a chain of very thick cv2.line segments along a centre line. OpenCV draws
   thick lines with round ends, so the joints close by themselves and fillPoly is not needed.
 - The grass is painted by filling the image with NumPy. The walls, the lines, the trees and
   the traffic light are drawn with line, circle and rectangle (Labs 4 and 5).
-- Two one-channel masks are drawn apart with the same lines, like the masks of Lab 1:
-    road_mask: 255 where the cars can drive. Around the road there are walls.
+- One-channel masks are drawn apart with the same lines, like the masks of Lab 1:
+    road_mask: 255 on the road. Around the road there are walls.
+    drivable:  255 where the centre of a car can be: the road minus CAR_MARGIN on each
+               side, so the body of the car never goes into a wall.
     zones:     one number per zone (finish line, checkpoints, STOP area and line, traffic
                light line), so the game knows where a car is by reading a single pixel.
 - Texts go through put_text of src/camera.py.
@@ -38,6 +40,7 @@ CAMERA_CORNER = (960, 0, 1280, 180)  # kept free: the small camera view is paste
 
 ROAD_WIDTH = 110       # px: width of the thick lines that make the road
 WALL_WIDTH = 12        # px: red and white walls just outside both edges of the road
+CAR_MARGIN = 12        # px: the centre of the car stays this far from the walls (the car is 22 px wide)
 LINE_ZONE_WIDTH = 24   # px: zone lines are wide, so a fast car cannot jump over one in a single frame
 
 # Values of the zones mask (0 = the rest of the track)
@@ -67,8 +70,7 @@ LAMPS = {
     "green": ((0, 220, 0), (0, 80, 0), (80, 255, 80), (200, 255, 200)),
 }
 
-START_GAP = 30       # px: the cars start this far behind the finish line
-START_SPACING = 50   # px between two cars that start side by side
+START_GAP = 30       # px: the car starts this far behind the finish line
 
 # The single-player track
 LAYOUT = {
@@ -141,6 +143,7 @@ class Track:
 
         self._place_traffic_light()
         self.road_mask = self._draw_road_mask()
+        self.drivable = self._draw_road_mask(margin=CAR_MARGIN)
         self.zones = self._draw_zones()
         self.background = self._draw_background()
 
@@ -175,6 +178,12 @@ class Track:
         h, w = self.road_mask.shape
         return 0 <= xi < w and 0 <= yi < h and self.road_mask[yi, xi] > 0
 
+    def can_drive(self, x, y):
+        """True if the centre of a car can be at (x, y) without its body going into a wall (drivable mask)."""
+        xi, yi = _px((x, y))
+        h, w = self.drivable.shape
+        return 0 <= xi < w and 0 <= yi < h and self.drivable[yi, xi] > 0
+
     def zone_at(self, x, y):
         """Zone at (x, y): one of the ZONE_* values, read from the zones mask."""
         xi, yi = _px((x, y))
@@ -183,22 +192,16 @@ class Track:
             return ZONE_NONE
         return int(self.zones[yi, xi])
 
-    def start_pose(self, slot=0, slots=1):
-        """Where a car starts: just behind the finish line, facing the driving direction.
-
-        Args:
-            slot (int): which car (0 or 1).
-            slots (int): how many cars start (1 or 2). Two cars start side by side.
+    def start_pose(self):
+        """Where the car starts: in the middle of the road, just behind the finish line, facing the driving direction.
 
         Returns:
             tuple: (x, y, angle), with the angle in degrees, anticlockwise from the x axis as
             seen on screen (the convention of cv2.getRotationMatrix2D).
         """
         p, u = self.point_at(-START_GAP / self.length)
-        offset = (slot - (slots - 1) / 2) * START_SPACING
-        q = p + _normal(u) * offset
         angle = float(np.degrees(np.arctan2(-u[1], u[0])))
-        return float(q[0]), float(q[1]), angle
+        return float(p[0]), float(p[1]), angle
 
     # ---- Drawing ----
 
@@ -249,10 +252,11 @@ class Track:
         self.light_post = (_px(p + side * (ROAD_WIDTH / 2 + WALL_WIDTH)), _px(p + side * (ROAD_WIDTH / 2 + 50)))
         self.light_box = p + side * (ROAD_WIDTH / 2 + 70)
 
-    def _draw_road_mask(self):
+    def _draw_road_mask(self, margin=0):
+        """The road drawn with the same thick lines on a one-channel image (margin px narrower on each side)."""
         width, height = self.size
         mask = np.zeros((height, width), np.uint8)
-        self._chain(mask, self.centre, 255, ROAD_WIDTH)
+        self._chain(mask, self.centre, 255, ROAD_WIDTH - 2 * margin)
         return mask
 
     def _draw_zones(self):
