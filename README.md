@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system and the steering wheel tracker are done; the calibration, the security system and the tracker have their own sections below. The game is still being built, so that part describes the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker and the main program have their own sections below. The game already has the track, the car, free laps and the leaderboard; the stop signs, the traffic lights and the two-player mode are still being built, so that part describes the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -99,7 +99,9 @@ LIVE      every frame:  webcam ──► undistort (remap) ──► current pha
           Phase 1 · Security   card detector ──► sequence decoder ──► registered plate? ──yes──► Phase 2
 
           Phase 2 · Game       tracker (HSV + meanShift + Kalman) ──► controls ──► game update (dt) ──► track
-                               shown together with the small camera view and the tracker box
+                               shown together with the small camera view and the tracker box ──key e──► Phase 3
+
+          Phase 3 · Leaderboard  best lap of each license plate, for 8 s ──► back to Phase 1
 ```
 
 ## Design rules
@@ -238,13 +240,30 @@ python -m src.tracker.wheel   # live demo (n = neutral position, p = 1 or 2 play
 
 The wheels are tracked on the mirrored image, the one the players see, so left and right mean the same for them and for the program. With two players, each one has half of the image: player 1 on the left, player 2 on the right.
 
-**From the wheel to the car.** Everything is measured from a neutral position: the wheel straight and at a comfortable distance. In the demo it is taken with `n`; in the game it will be taken during the countdown before the start.
+**From the wheel to the car.** Everything is measured from a neutral position: the wheel straight and at a comfortable distance. In the demo it is taken with `n`; in [the main program](#main-program) it is taken when the countdown before the start ends.
 
 - **Steering:** the angle of the line between the two marks. Up to 5° it counts as straight, and at 60° the steering is full.
 - **Throttle:** the distance in pixels between the marks, compared with the neutral one. Between 92 % and 108 % of it the car keeps its speed. Closer, it accelerates, with full throttle at 125 %; farther, it brakes, with a full brake at 80 %. The values grow gradually instead of jumping, so the small shaking of the hands does not make the car jerk.
 - If a wheel is lost, the game gets `Controls(0, -1, False)` and the car brakes.
 
 **Results so far.** With the real wheels the demo runs at about 30 FPS, and the tracker takes about 3.5 ms per frame. With simulated camera views (blur, noise, darker and brighter light, and a background with skin, wood and denim colors), the angle error stayed under 1.5° and the distance error under 3 % between 0.5 and 2 m, and a wheel moving away from the camera was followed up to 3.5 m. A mark covered for 8 frames was kept with an error of 0.6°. Other green or magenta objects in the room, even a sticker 16 pixels wide, neither stopped the wheel from being found nor were followed instead of a mark. When a finger covers half of a mark, the angle moves by about 7.5°, because the centre of the mark moves to its visible half.
+
+## Main program
+
+`main.py` puts everything together in one loop and one window:
+
+```bash
+python -m src.tracker.tune   # first, wherever you are going to play: tune the colors of the wheel marks to the light
+python main.py               # the whole program (n = new car, r = start the plate again, e = end the turn, q = quit)
+```
+
+Every frame the camera image is undistorted and goes to the current phase:
+
+1. **Access.** The player shows the four digits of the license plate, one card at a time, as in `python -m src.security.decoder`. The cards are read on the original frame, and the image is only mirrored to show it. With a registered plate the screen says "Access granted" and the game starts 1.5 s later. `n` registers a new car and `r` starts the plate again.
+2. **Game.** The tracker works on the mirrored image and turns the wheel into `Controls` for the game. During the countdown the player holds the wheel straight, at a comfortable distance; when it ends (`Game.started()`), that position becomes the neutral one (`set_neutral`). The player drives as many laps as they want, and every valid lap is saved in `data/leaderboard.json`. On screen: the game, the small camera view with the tracker box in the top-right corner, the FPS in the top-left one and, under the track, what to do with the wheel and the keys. `e` ends the turn.
+3. **Leaderboard.** For 8 s, the best lap of each license plate and the best lap of this turn. Then the program goes back to the access for the next car.
+
+Every turn starts with a new tracker, so one player's neutral position is never used for the next one. For now there is one player per turn; the two-player mode is still being built. `q`, `ESC` or closing the window quits at any moment.
 
 ## Hardware and environment
 
@@ -266,7 +285,7 @@ This is the structure we plan to follow. It may change as the project grows.
 .
 ├── README.md
 ├── requirements.txt
-├── main.py                  # main loop: security -> game
+├── main.py                  # main loop: access -> game -> leaderboard
 ├── src/
 │   ├── camera.py            # open the camera, FPS, undistort
 │   ├── controls.py          # Controls class and keyboard control (test mode without camera)
