@@ -52,7 +52,7 @@ This part is already built: how the cards are read and how the decoder works is 
   - **Stop:** you must come to a full stop inside a zone before the line. Crossing it without stopping **adds time** (5 s to start with, to be tuned while playing).
   - **Traffic light:** it changes color on a timer. Running a red light **adds time**.
 - There are invisible **checkpoints** so you can't cut corners.
-- The car is slower when it leaves the road.
+- There are walls on both sides of the road: the car cannot go through them, and it does not get stuck when it hits one.
 - The car's **license plate is shown on top of it**.
 - The screen also shows a small view of the camera with the tracker's box, and the **FPS are always visible**.
 
