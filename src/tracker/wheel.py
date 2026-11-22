@@ -6,15 +6,16 @@ the bottom. Steps, and the lab each one comes from:
    with the trackbar tool of Lab 1 (python -m src.tracker.tune) and saved in data/wheel_colors.json.
 2. Erosion and then dilation of each mask with a 3x3 kernel (Lab 3): small specks of the
    same color disappear and the marks keep their size.
-3. Each mark is followed with meanShift and a Kalman filter, as in Lab 5 (part D). The Kalman
-   filter predicts where the mark will be, meanShift looks for it there in the mask, and the
-   centre it finds corrects the filter. If a hand covers a mark for a moment, its predicted
-   position is used for a few frames.
-4. When the wheel is found, the two marks only count as a wheel if they are placed like on the
-   plate: their distance is about 1.8 times their diameter (9 cm and 5 cm). Otherwise one of them
-   is another object of the same color, and both are searched for again. This is not checked
-   while the wheel is being followed, because far from the camera the marks look smaller and
-   blurrier, and meanShift already keeps each mark where it was.
+3. Finding a wheel. While a wheel is not being followed (at the start, or after losing it),
+   findContours finds every blob of each color, as in the card detector, and the wheel is the
+   pair of blobs, one of each color, placed most like the marks on the plate: about the same
+   size and about 1.8 diameters apart (9 cm and 5 cm). Because every blob is looked at, another
+   object of the same color in the room does not stop the wheel from being found.
+4. Following it. Each mark is then followed with meanShift and a Kalman filter, as in Lab 5
+   (part D). The Kalman filter predicts where the mark will be, meanShift looks for it there in
+   the mask, and the centre it finds corrects the filter. If a hand covers a mark for a moment,
+   its predicted position is used for a few frames; after that the wheel is lost and it is
+   searched for again as in step 3.
 5. With the two centres: the angle of the line that joins them gives the steering, and their
    distance in pixels, which grows when the wheel comes closer to the camera, gives the throttle.
    Both are measured from the neutral position (wheel straight, at the distance where the car
@@ -54,8 +55,9 @@ MIN_PIXELS = 30      # fewer pixels of a color than this = no mark. The erosion 
                      # smaller than 5x5 = 25 pixels, and a 5 cm mark 4 m away still has about 90
 MAX_MISSED = 10      # frames a covered mark is kept with the Kalman prediction (1/3 s at 30 FPS)
 TERM_CRIT = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 1)   # when meanShift stops, as in Lab 5
-# Distance between the marks / their diameter. On the plate it is 9 cm / 5 cm = 1.8; the margin
-# allows for a tilted wheel or a mark half covered by a finger
+# Distance between the marks / their diameter: 9 cm / 5 cm = 1.8 on the plate. A pair of blobs
+# can be a wheel between 1.2 and 3.0, which allows for a tilted wheel or a badly lit mark
+MARK_RATIO = 1.8
 SHAPE_RATIOS = (1.2, 3.0)
 
 DEFAULT_SEPARATION = 75.0   # pixels between the marks with the wheel about 1 m away, until set_neutral()
@@ -98,6 +100,41 @@ def search_window(cx, cy, side, shape):
     return x, y, side, side
 
 
+def find_blobs(mask):
+    """Centre (x, y) and diameter of every blob of one color, found with findContours as in the card detector.
+
+    The centre is the centre of the blob's bounding box, like the centre of the meanShift window.
+    """
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    blobs = []
+    for contour in contours:
+        if cv2.contourArea(contour) >= MIN_PIXELS:
+            x, y, w, h = cv2.boundingRect(contour)
+            blobs.append((x + w / 2, y + h / 2, (w + h) / 2))
+    return blobs
+
+
+def find_wheel(top_mask, bottom_mask):
+    """Finds a wheel: the pair of blobs, one of each color, placed most like the marks on the plate.
+
+    Two blobs can be the marks of a wheel if they have a similar size and their distance divided
+    by their diameter is within SHAPE_RATIOS. Of those pairs, the one closest to MARK_RATIO is taken.
+
+    Returns:
+        tuple: ((x, y) of the top mark, (x, y) of the bottom mark), or None if no pair fits.
+    """
+    best, best_error = None, None
+    for tx, ty, top_diameter in find_blobs(top_mask):
+        for bx, by, bottom_diameter in find_blobs(bottom_mask):
+            if not 0.5 <= top_diameter / bottom_diameter <= 2:   # on the plate both marks are the same size
+                continue
+            ratio = np.hypot(tx - bx, ty - by) / ((top_diameter + bottom_diameter) / 2)
+            error = abs(ratio - MARK_RATIO)
+            if SHAPE_RATIOS[0] <= ratio <= SHAPE_RATIOS[1] and (best is None or error < best_error):
+                best, best_error = ((tx, ty), (bx, by)), error
+    return best
+
+
 class MarkTracker:
     """Follows one color mark with meanShift and a Kalman filter, as in Lab 5 (part D)."""
 
@@ -107,48 +144,34 @@ class MarkTracker:
         self.kf.measurementMatrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], np.float32)
         self.kf.transitionMatrix = np.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
         self.kf.processNoiseCov = np.eye(4, dtype=np.float32) * 0.03
-        self.found = False   # False until the mark is seen, and again once it has been lost
         self.missed = 0      # frames in a row in which the mark was not seen
-        self.pixels = 0      # size of the mark (its pixels) the last time it was seen
+
+    def start(self, x, y):
+        """Starts following the mark at (x, y): the filter starts there with no speed, as in Lab 5."""
+        self.kf.statePost = np.array([[x], [y], [0], [0]], np.float32)
+        self.kf.errorCovPost = np.eye(4, dtype=np.float32)
+        self.missed = 0
 
     def update(self, mask, side):
-        """Looks for the mark in this frame.
+        """Follows the mark in this frame: Kalman prediction, then meanShift around it.
 
         Args:
             mask (np.ndarray): mask of the mark's color in this player's part of the image.
             side (int): side of the meanShift search window, in pixels.
 
         Returns:
-            tuple: filtered (x, y) of the mark, or None if it is lost.
+            tuple: filtered (x, y) of the mark, or None once it has been lost.
         """
-        if self.found:
-            prediction = self.kf.predict()   # where the mark should be now
-            start = (prediction[0, 0], prediction[1, 0])
-        elif cv2.countNonZero(mask) >= MIN_PIXELS:
-            ys, xs = np.nonzero(mask)        # lost: start from the mean position of its color
-            start = (xs.mean(), ys.mean())
-        else:
-            return None
-
-        _, (x, y, w, h) = cv2.meanShift(mask, search_window(*start, side, mask.shape), TERM_CRIT)
-        pixels = cv2.countNonZero(mask[y:y + h, x:x + w])
-        if pixels >= MIN_PIXELS:
-            self.pixels = pixels
-            centre = np.array([[x + w / 2], [y + h / 2]], np.float32)
-            if self.found:
-                self.kf.correct(centre)
-            else:   # seen for the first time: the filter starts on it, as in Lab 5
-                self.kf.statePost = np.array([[centre[0, 0]], [centre[1, 0]], [0], [0]], np.float32)
-                self.kf.errorCovPost = np.eye(4, dtype=np.float32)
-                self.found = True
+        prediction = self.kf.predict()   # where the mark should be now
+        window = search_window(prediction[0, 0], prediction[1, 0], side, mask.shape)
+        _, (x, y, w, h) = cv2.meanShift(mask, window, TERM_CRIT)
+        if cv2.countNonZero(mask[y:y + h, x:x + w]) >= MIN_PIXELS:
+            self.kf.correct(np.array([[x + w / 2], [y + h / 2]], np.float32))
             self.missed = 0
-        elif self.found:
+        else:
             self.missed += 1   # covered for a moment (a hand, a reflection): the prediction is kept
             if self.missed > MAX_MISSED:
-                self.found = False
-
-        if not self.found:
-            return None
+                return None
         return float(self.kf.statePost[0, 0]), float(self.kf.statePost[1, 0])
 
 
@@ -183,24 +206,31 @@ class WheelTracker:
         controls = []
         for p in range(self.players):
             x0 = p * width
-            marks = self.trackers[p]
-            # The search window is about as big as the distance between the marks: bigger than a mark
-            found = {mark: marks[mark].update(self.masks[mark][:, x0:x0 + width], self.separation[p])
-                     for mark in MARKS}
-            followed = self.wheels[p] is not None   # it was already being followed in the last frame
+            masks = {mark: self.masks[mark][:, x0:x0 + width] for mark in MARKS}
+            trackers = self.trackers[p]
+            if self.wheels[p] is None:
+                # Not followed: look for a pair of blobs placed like the marks on the plate
+                pair = find_wheel(masks["top"], masks["bottom"])
+                found = None if pair is None else dict(zip(MARKS, pair))
+                if found is not None:
+                    for mark in MARKS:
+                        trackers[mark].start(*found[mark])
+            else:
+                # Followed: each mark with Kalman + meanShift. The search window is about as big
+                # as the distance between the marks, so it is bigger than a mark
+                found = {mark: trackers[mark].update(masks[mark], self.separation[p]) for mark in MARKS}
+                if None in found.values():
+                    found = None   # a mark has been lost: the wheel is searched for again in the next frame
+
             self.wheels[p] = None
-            if found["top"] is not None and found["bottom"] is not None:
+            if found is not None:
                 top = (found["top"][0] + x0, found["top"][1])
                 bottom = (found["bottom"][0] + x0, found["bottom"][1])
                 dx, dy = top[0] - bottom[0], top[1] - bottom[1]
+                angle = float(np.degrees(np.arctan2(dx, -dy)))   # 0 = straight, > 0 = turned to the right
                 separation = float(np.hypot(dx, dy))
-                diameter = 2 * np.sqrt((marks["top"].pixels + marks["bottom"].pixels) / 2 / np.pi)
-                if followed or SHAPE_RATIOS[0] <= separation / diameter <= SHAPE_RATIOS[1]:
-                    angle = float(np.degrees(np.arctan2(dx, -dy)))   # 0 = straight, > 0 = turned to the right
-                    self.wheels[p] = (top, bottom, angle, separation)
-                    self.separation[p] = separation
-                else:   # not placed like on the wheel: another object of the same color, search again
-                    marks["top"].found = marks["bottom"].found = False
+                self.wheels[p] = (top, bottom, angle, separation)
+                self.separation[p] = separation
 
             if self.wheels[p] is None:
                 controls.append(Controls(0.0, -1.0, False))   # wheel lost: the game brakes the car
