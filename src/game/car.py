@@ -25,10 +25,10 @@ import numpy as np
 
 from src.camera import put_text
 
-MAX_SPEED = 280.0      # px/s
+MAX_SPEED = 260.0      # px/s
 ACCELERATION = 180.0   # px/s^2 with full throttle
 BRAKING = 340.0        # px/s^2 with full brake: from full speed to 0 in about 0.8 s
-TURN_RATE = 160.0      # degrees/s with full steering, also when stopped
+TURN_RATE = 130.0      # degrees/s with full steering, also when stopped
 WALL_SPEED = 100.0     # px/s: maximum speed while the car is pushing against a wall
 WALL_DRAG = 500.0      # px/s^2 at which a car pushing against a wall slows down to WALL_SPEED
 STOPPED_SPEED = 5.0    # px/s: below this the car counts as stopped (for the STOP)
