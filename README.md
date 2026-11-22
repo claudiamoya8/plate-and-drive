@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker and the main program have their own sections below. The game already has the track, the car, free laps and the leaderboard; the stop signs, the traffic lights and the two-player mode are still being built, so that part describes the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker and the main program have their own sections below. The game already has the track, the car, free laps, the leaderboard, the stop sign and the traffic light; the two-player mode is still being built, so that part describes the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
