@@ -1,4 +1,4 @@
-"""The game: a time trial with free laps, a countdown, checkpoints and the leaderboard.
+"""The game: a time trial with free laps, a countdown, checkpoints, penalties and the leaderboard.
 
 What happens:
 1. Countdown "3, 2, 1" with the car stopped on the start. If the wheel cannot be seen
@@ -19,19 +19,26 @@ What happens:
 5. The player drives as many laps as they want. main.py ends the turn with a key and shows
    the leaderboard (leaderboard() and draw_leaderboard()): the best lap of each plate.
 
-The STOP sign and the traffic light come in the next step: for now the traffic light stays
-green and there are no penalties.
+Penalties, added to the lap in which they happen:
+- STOP: the car has to stop completely (car.stopped) inside the STOP area, before the line.
+  Crossing the line without having stopped there adds STOP_PENALTY.
+- Traffic light: green GREEN_TIME, yellow YELLOW_TIME and red RED_TIME, over and over, from the
+  "GO!" (it is green during the countdown). Crossing its line while it is red adds
+  RED_LIGHT_PENALTY.
+Each line is checked the first time the car touches it in a lap, so a penalty is never counted
+twice even though the car takes several frames to cross the line.
 
-On screen (draw(): 1280 x 720, without the FPS): the track and the car, the scoreboard at the
-top (plate, lap, time of this lap, penalties, last lap and best lap) and, in a dark panel drawn
-with rectangle on the grass inside the loop, the countdown (or the message to show the wheel),
-"GO!" and, for 2 s after each lap, its time. All texts are written with put_text of
-src/camera.py, at fixed positions. The two top corners are left free for the FPS and the small
-camera view.
+On screen (draw(): 1280 x 720, without the FPS): the track with the traffic light and the car,
+the scoreboard at the top (plate, lap, time of this lap, penalties, last lap and best lap) and,
+in a dark panel drawn with rectangle on the grass inside the loop, the countdown (or the
+message to show the wheel), "GO!" and, for 2 s, the time of each lap or each penalty. All texts
+are written with put_text of src/camera.py, at fixed positions. The two top corners are left
+free for the FPS and the small camera view.
 
 The lap time is game time: each frame adds its dt, limited to MAX_DT. At the normal frame
 rate (about 30 FPS with the camera) this is the real time; if the program freezes for a
-moment, the car does not jump and the time does not run away.
+moment, the car does not jump and the time does not run away. The traffic light runs on the
+same game time.
 
 data/leaderboard.json is not uploaded to GitHub: every computer keeps its own laps. If it does
 not exist, the leaderboard is empty and the file is created with the first lap, as it is done
@@ -45,19 +52,23 @@ import numpy as np
 
 from src.camera import put_text
 from src.game.car import Car
-from src.game.track import ZONE_CHECKPOINTS, ZONE_FINISH, Track
+from src.game.track import ZONE_CHECKPOINTS, ZONE_FINISH, ZONE_LIGHT_LINE, ZONE_STOP_AREA, ZONE_STOP_LINE, Track
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LEADERBOARD_FILE = os.path.normpath(os.path.join(HERE, "..", "..", "data", "leaderboard.json"))
 
-COUNTDOWN = 3.0        # s of countdown before the start
-GO_TIME = 0.8          # s the "GO!" stays on screen
-LAP_PANEL_TIME = 2.0   # s the time of a lap stays on screen after it
-MAX_DT = 0.05          # s: a longer frame counts as this
-LEADERBOARD_ROWS = 5   # laps shown in the leaderboard
+COUNTDOWN = 3.0           # s of countdown before the start
+GO_TIME = 0.8             # s the "GO!" stays on screen
+NOTICE_TIME = 2.0         # s the panel shows the time of a lap or a penalty
+MAX_DT = 0.05             # s: a longer frame counts as this
+STOP_PENALTY = 5.0        # s for crossing the STOP line without having stopped
+RED_LIGHT_PENALTY = 5.0   # s for crossing the traffic light line while it is red
+GREEN_TIME, YELLOW_TIME, RED_TIME = 4.0, 1.0, 3.0   # s of each colour of the traffic light
+LEADERBOARD_ROWS = 5      # laps shown in the leaderboard
 
 WHITE = (255, 255, 255)
 YELLOW = (0, 255, 255)
+RED = (0, 0, 255)
 PANEL_COLOR = (40, 40, 40)
 PANEL_TOP_LEFT = (330, 360)              # the panel goes on the grass inside the loop,
 PANEL_BOTTOM_RIGHT = (630, 510)          # clear of the road, the walls and the traffic light
@@ -136,13 +147,18 @@ class Game:
         self.leaderboard_file = leaderboard_file
         self.countdown = COUNTDOWN    # seconds left before the start
         self.waiting_wheel = False    # True while the countdown waits for the wheel to be seen
+        self.light_time = 0.0         # seconds of the traffic light cycle, which starts at the "GO!"
         self.lap = 1                  # number of the lap being driven
         self.lap_time = 0.0           # seconds since this lap started (game time)
-        self.penalties = 0.0          # seconds added in this lap for the STOP and the traffic light (next step)
+        self.penalties = 0.0          # seconds of penalties in this lap
         self.next_checkpoint = 0      # how many checkpoints of this lap, in order, the car has gone through
+        self.stopped_at_stop = False  # True once the car has stopped inside the STOP area in this lap
+        self.stop_passed = False      # True once the car has touched the STOP line in this lap
+        self.light_passed = False     # True once the car has touched the traffic light line in this lap
         self.last_lap = None          # final time of the last lap (None until the first one is complete)
         self.best_lap = None          # final time of the best lap of this turn
-        self.lap_panel = 0.0          # seconds left to show the time of the last lap
+        self.notice = ""              # what the panel shows for a moment: "LAP TIME", "STOP" or "RED LIGHT"
+        self.notice_time = 0.0        # seconds left to show it
 
     def started(self):
         """True once the countdown has ended (main.py takes the neutral position of the wheels then)."""
@@ -151,6 +167,15 @@ class Game:
     def best_laps(self):
         """Best lap of this turn, with its penalties included: {plate: seconds} (empty until a lap is complete)."""
         return {self.plate: self.best_lap} if self.best_lap is not None else {}
+
+    def light(self):
+        """Colour of the traffic light now: "green", "yellow" or "red"."""
+        t = self.light_time % (GREEN_TIME + YELLOW_TIME + RED_TIME)
+        if t < GREEN_TIME:
+            return "green"
+        if t < GREEN_TIME + YELLOW_TIME:
+            return "yellow"
+        return "red"
 
     def update(self, controls, dt):
         """One frame of the game.
@@ -170,10 +195,21 @@ class Game:
             return
 
         self.lap_time += dt
-        self.lap_panel = max(self.lap_panel - dt, 0.0)
+        self.light_time += dt
+        self.notice_time = max(self.notice_time - dt, 0.0)
         path = self.car.update(control, dt)
         for k, (x, y) in enumerate(path):
             zone = self.track.zone_at(x, y)
+            # STOP line and traffic light line: checked the first time the car touches them in this lap
+            if zone == ZONE_STOP_LINE and not self.stop_passed:
+                self.stop_passed = True
+                if not self.stopped_at_stop:
+                    self._penalty(STOP_PENALTY, "STOP")
+            elif zone == ZONE_LIGHT_LINE and not self.light_passed:
+                self.light_passed = True
+                if self.light() == "red":
+                    self._penalty(RED_LIGHT_PENALTY, "RED LIGHT")
+            # Checkpoints in order, and then the finish line
             if self.next_checkpoint < len(ZONE_CHECKPOINTS):
                 if zone == ZONE_CHECKPOINTS[self.next_checkpoint]:
                     self.next_checkpoint += 1
@@ -183,6 +219,14 @@ class Game:
                 self._complete_lap(self.lap_time - rest)
                 self.lap_time = rest
                 break
+        # A full stop only counts inside the STOP area, before its line
+        if self.car.stopped and self.track.zone_at(self.car.x, self.car.y) == ZONE_STOP_AREA:
+            self.stopped_at_stop = True
+
+    def _penalty(self, seconds, notice):
+        """Adds a penalty to this lap and shows it in the panel for a moment."""
+        self.penalties += seconds
+        self.notice, self.notice_time = notice, NOTICE_TIME
 
     def _complete_lap(self, driving_time):
         """Saves the lap that has just been completed and starts the next one."""
@@ -196,11 +240,14 @@ class Game:
         self.lap += 1
         self.penalties = 0.0
         self.next_checkpoint = 0
-        self.lap_panel = LAP_PANEL_TIME
+        self.stopped_at_stop = False
+        self.stop_passed = False
+        self.light_passed = False
+        self.notice, self.notice_time = "LAP TIME", NOTICE_TIME
 
     def draw(self):
         """Image of this frame: 1280 x 720 BGR, without the FPS."""
-        image = self.track.draw("green")
+        image = self.track.draw(self.light())
         self.car.draw(image)
 
         last = format_time(self.last_lap) if self.last_lap is not None else "-"
@@ -220,8 +267,15 @@ class Game:
         elif self.lap == 1 and self.lap_time < GO_TIME:
             draw_panel(image)
             put_text(image, "GO!", (413, 462), YELLOW, 2.5)
-        elif self.lap_panel > 0:
+        elif self.notice_time > 0:
             draw_panel(image)
-            put_text(image, "LAP TIME", (368, 425), YELLOW, 1.6)
-            put_text(image, format_time(self.last_lap), (399, 480), WHITE, 1.6)
+            if self.notice == "LAP TIME":
+                put_text(image, "LAP TIME", (368, 425), YELLOW, 1.6)
+                put_text(image, format_time(self.last_lap), (399, 480), WHITE, 1.6)
+            elif self.notice == "STOP":
+                put_text(image, "STOP", (416, 425), RED, 1.6)
+                put_text(image, f"+{STOP_PENALTY:.0f} s", (416, 480), WHITE, 1.6)
+            else:
+                put_text(image, "RED LIGHT", (350, 425), RED, 1.6)
+                put_text(image, f"+{RED_LIGHT_PENALTY:.0f} s", (416, 480), WHITE, 1.6)
         return image

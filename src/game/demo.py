@@ -1,9 +1,9 @@
 """Keyboard demo of the game, without the camera.
 
 The game as it will be played, but with the keyboard instead of the steering wheel: the
-countdown and then as many laps as you want, each valid lap saved in data/leaderboard.json.
-Key e ends the turn and shows the leaderboard, as main.py will do. Key m shows the masks of
-the track, to check them.
+countdown and then as many laps as you want, with the STOP and the traffic light, each valid
+lap saved in data/leaderboard.json. Key e ends the turn and shows the leaderboard, as main.py
+will do. Key m shows the masks of the track, to check them.
 
 Usage, from the repository root:
     python -m src.game.demo
