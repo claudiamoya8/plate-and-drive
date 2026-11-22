@@ -47,12 +47,12 @@ This part is already built: how the cards are read and how the decoder works is 
 ### 2. The game: time trial
 
 - A **fixed track seen from above** (top-down view) that fits on a single screen, with no scrolling.
-- The goal is to **complete one lap as fast as possible**. **There are no other cars.**
+- You can drive **as many laps as you want**: every valid lap is timed and saved, and the leaderboard keeps the best lap of each license plate. **There are no other cars.**
 - **Stop signs and traffic lights** are painted on the road so they can be seen from above:
   - **Stop:** you must come to a full stop inside a zone before the line. Crossing it without stopping **adds time** (5 s to start with, to be tuned while playing).
   - **Traffic light:** it changes color on a timer. Running a red light **adds time**.
 - There are invisible **checkpoints** so you can't cut corners.
-- The car is slower when it leaves the road.
+- There are walls on both sides of the road: the car cannot go through them, and it does not get stuck when it hits one.
 - The car's **license plate is shown on top of it**.
 - The screen also shows a small view of the camera with the tracker's box, and the **FPS are always visible**.
 
@@ -109,7 +109,7 @@ These are the rules we agreed on so that the modules fit together:
 - **One loop and one OpenCV window.** Each frame, the camera is read, processed and everything (game, small camera view, tracker box, FPS) is drawn into a single image shown with `imshow`. No Tkinter, no pygame, no extra threads.
 - The game is drawn with the drawing functions used in the course labs (`line`, `circle`, `rectangle`): the road is a chain of very thick `line` segments, so `fillPoly` is not needed. Texts (FPS, license plates) use `putText` through `put_text` and `draw_fps` in `src/camera.py`. A separate one-channel mask, drawn with the same thick lines, tells which pixels are road.
 - The game physics use the **real `dt`** between frames, so the car's speed does not depend on the FPS.
-- Registered license plates are stored in `data/plates.json` and the leaderboard in `data/leaderboard.json`.
+- Registered license plates are stored in `data/plates.json` and the leaderboard in `data/leaderboard.json`, which is not uploaded: every computer keeps its own laps.
 - Calibration parameters are stored in `data/calibration.npz` (`K`, `dist`, `rms`). The main program only loads them. To undistort in real time, `initUndistortRectifyMap` is called once and `remap` on every frame, instead of `cv2.undistort`.
 - The code has to be fast: no per-pixel loops in Python, and working on downscaled images whenever possible.
 
@@ -125,13 +125,15 @@ class Controls:
     throttle: float  # -1 (full brake) .. 0 (keep speed) .. +1 (full throttle)
     visible: bool    # False if the wheel is lost -> the game brakes the car
 
-# Game
+# Game (free laps: main.py ends the turn with a key)
 class Game:
     def __init__(self, plates: list[str]): ...  # 1 or 2 players
-    def update(self, controls: list[Controls], dt: float) -> None: ...
+    def started(self) -> bool: ...  # the countdown has ended: main.py calls tracker.set_neutral() then
+    def update(self, controls: list[Controls], dt: float) -> None: ...  # every valid lap is saved in data/leaderboard.json
     def draw(self) -> np.ndarray: ...  # BGR image of the track, to paste into the window
-    def finished(self) -> bool: ...
-    def times(self) -> dict[str, float]: ...  # license plate -> final time (with penalties)
+    def best_laps(self) -> dict[str, float]: ...  # license plate -> best lap of this turn (with penalties)
+def leaderboard(n: int = 5) -> list[tuple[str, float]]: ...  # best laps ever, one per license plate, fastest first
+def draw_leaderboard(image, rows: list[tuple[str, float]]) -> None: ...  # leaderboard panel for the end of a turn
 
 # Security (already built, in src/security/)
 def detect_cards(frame_bgr) -> list[Card]: ...   # Card(digit, corners): digit 0-9, or None if it can't be read
@@ -284,7 +286,7 @@ This is the structure we plan to follow. It may change as the project grows.
 │       ├── car.py           # simple physics
 │       ├── game.py          # Game class, timer, penalties, leaderboard
 │       └── demo.py          # playable keyboard demo without camera: python -m src.game.demo
-├── data/                    # calibration.npz, plates.json, wheel_colors.json, leaderboard.json (chessboard photos stay local)
+├── data/                    # calibration.npz, plates.json, wheel_colors.json, leaderboard.json (chessboard photos and leaderboard.json stay local)
 └── docs/                    # cards.pdf, wheel_marks.pdf, report figures, block diagram
 ```
 
@@ -315,7 +317,7 @@ This is our initial split. We may change it along the way.
 - Nobody edits another module's files at the same time.
 - Small commits from both of us, with clear messages.
 - Code, comments, this README and commit messages are in English.
-- We don't upload the professors' PDFs and slides, the demo video (it will be linked here) or `__pycache__`.
+- We don't upload the professors' PDFs and slides, the demo video (it will be linked here), `data/leaderboard.json` or `__pycache__`.
 
 ## Deliverables
 

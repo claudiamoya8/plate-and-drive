@@ -20,6 +20,9 @@ desktop.ini
 data/chessboard_photos/
 data/calibration_results/
 
+# Leaderboard: it changes every time someone plays, and every computer keeps its own laps
+data/leaderboard.json
+
 # Videos: the demo is linked in the README, not uploaded
 *.mp4
 *.avi
