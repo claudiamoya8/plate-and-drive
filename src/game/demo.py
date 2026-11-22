@@ -1,17 +1,21 @@
 """Keyboard demo of the game, without the camera.
 
-Step by step this will become the playable demo of the game. For now it shows the track,
-and (key m) its two masks: the road and the zones, to check them.
+Step by step this will become the playable demo of the game. For now there is the track
+and one car driven with the keyboard, and (key m) the masks of the track, to check them.
 
 Usage, from the repository root:
     python -m src.game.demo
-Keys: m = masks on/off, t = change the colour of the traffic light,
-q / ESC (or closing the window) = quit.
+Keys: W/S/A/D = drive (accelerate, brake, left, right), r = back to the start,
+m = masks on/off, t = change the colour of the traffic light, q / ESC (or closing the window) = quit.
 """
+import time
+
 import cv2
 import numpy as np
 
 from src.camera import FpsCounter, draw_fps, put_text
+from src.controls import KeyboardControls
+from src.game.car import Car
 from src.game.track import (CAMERA_CORNER, FPS_CORNER, LIGHT_COLORS, ZONE_CHECKPOINTS, ZONE_FINISH,
                             ZONE_LIGHT_LINE, ZONE_STOP_AREA, ZONE_STOP_LINE, Track)
 
@@ -53,14 +57,26 @@ def draw_masks(track):
 def main():
     track = Track()
     masks_view = draw_masks(track)   # the masks never change: drawn once
+    car = Car(track, "2047")
+    keyboard = KeyboardControls(players=1)
     fps_counter = FpsCounter()
     window_name = "Plate and Drive - demo"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)   # resizable, as in the course's test.py
     show_masks = False
     light = 0
+    key = 255
+    t_prev = time.perf_counter()
     while True:
+        t = time.perf_counter()
+        dt, t_prev = t - t_prev, t   # real dt between frames, for the physics
+        controls = keyboard.update(key, dt)
+        car.update(controls[0], dt)
+
         frame = masks_view.copy() if show_masks else track.draw(LIGHT_COLORS[light])
-        put_text(frame, "m: masks   t: traffic light   q: quit", (285, 32), (255, 255, 255), 0.7)
+        car.draw(frame)
+        put_text(frame, "W/S/A/D: drive   r: restart   q: quit", (285, 30), (255, 255, 255), 0.6)
+        wall = "   WALL" if car.touching_wall else ""
+        put_text(frame, f"m: masks   t: light   Speed: {car.speed:3.0f} px/s{wall}", (285, 58), (255, 255, 255), 0.6)
         draw_fps(frame, fps_counter.tick())
         cv2.imshow(window_name, frame)
 
@@ -71,6 +87,8 @@ def main():
             show_masks = not show_masks
         if key in (ord("t"), ord("T")):
             light = (light + 1) % len(LIGHT_COLORS)
+        if key in (ord("r"), ord("R")):
+            car.reset()
         # Closing the window with its X also quits, as in Lab 1 (otherwise imshow would open it again)
         if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
             break
