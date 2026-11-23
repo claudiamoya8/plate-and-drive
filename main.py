@@ -110,8 +110,7 @@ def draw_game_texts(image, game, controls):
 def draw_turn_over(game, rows, seconds_left):
     """Image of the end of a turn: the track and the cars, the leaderboard and the best lap of each player."""
     image = game.track.draw("green")
-    for player in game.players:
-        player.car.draw(image)
+    game.draw_cars(image)   # all the cars and then all the plates
     draw_leaderboard(image, rows)
     best = game.best_laps()
     for (x, y), player in zip(TURN_LINES, game.players):
