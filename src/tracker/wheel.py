@@ -68,7 +68,7 @@ DEAD_ANGLE = 5.0     # degrees around the neutral angle that still count as stra
 THROTTLE_RATIOS = [0.80, 0.92, 1.08, 1.25]
 THROTTLE_VALUES = [-1.0, 0.0, 0.0, 1.0]
 BOX_SCALE = 1.25     # half side of the box around the wheel, in mark distances (plate radius 11 cm, marks 9 cm apart)
-PLAYER_COLORS = [(255, 255, 0), (0, 165, 255)]   # BGR: cyan for player 1, orange for player 2
+PLAYER_COLORS = [(0, 0, 220), (220, 90, 0)]   # BGR: red for player 1 and blue for player 2, like their cars in the game
 
 
 def load_colors(path=COLORS_FILE):
