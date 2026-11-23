@@ -34,7 +34,8 @@ Each line is checked the first time a car touches it in a lap, so a penalty is n
 twice even though the car takes several frames to cross the line.
 
 On screen (draw(): 1280 x 720, without the FPS): the track with the traffic light and the cars,
-each with its plate above it; the scoreboard at the top (plate, lap, time of this lap,
+each with its plate above it in the colour of the car (draw_cars: first all the cars and then
+all the plates, so a car never hides the plate of the other); the scoreboard at the top (plate, lap, time of this lap,
 penalties, last lap and best lap: in two lines with one player, and in one line per player,
 after a square of the colour of its car, with two); and, in a dark panel drawn with rectangle on
 the grass inside the loop, the countdown (or the message to show the wheels), "GO!" and, for
@@ -288,11 +289,20 @@ class Game:
         player.light_passed = False
         self.notice, self.notice_player, self.notice_time = "LAP TIME", player, NOTICE_TIME
 
+    def draw_cars(self, image):
+        """Draws all the cars and then all their plates, so a car never hides the plate of the other.
+
+        draw() uses it, and so can the end-of-turn screen of main.py.
+        """
+        for player in self.players:
+            player.car.draw(image)
+        for player in self.players:
+            player.car.draw_plate(image)
+
     def draw(self):
         """Image of this frame: 1280 x 720 BGR, without the FPS."""
         image = self.track.draw(self.light())
-        for player in self.players:
-            player.car.draw(image)
+        self.draw_cars(image)
 
         # Scoreboard: two lines with one player, and one line per player with two
         if len(self.players) == 1:

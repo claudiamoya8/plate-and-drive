@@ -130,8 +130,9 @@ class Controls:
 # Game (free laps: main.py ends the turn with a key)
 class Game:
     def __init__(self, plates: list[str]): ...  # 1 or 2 players: player 1 (left half of the camera) first
-    players: list[Player]  # in the same order; each one has its .plate and its .car (car.draw(image) draws it)
+    players: list[Player]  # in the same order; each one has its .plate and its .car
     def started(self) -> bool: ...  # the countdown has ended: main.py calls tracker.set_neutral() then
+    def draw_cars(self, image) -> None: ...  # all the cars and then all their plates (for the end-of-turn screen)
     def update(self, controls: list[Controls], dt: float) -> None: ...  # every valid lap is saved in data/leaderboard.json
     def draw(self) -> np.ndarray: ...  # BGR image of the track, to paste into the window
     def best_laps(self) -> dict[str, float]: ...  # license plate -> best lap of this turn (with penalties)
@@ -264,7 +265,7 @@ python -m src.controls    # test window for the keyboard controls
 2. The road is that line drawn as a chain of very thick `line` segments (110 px), so `fillPoly` is not needed. Red and white walls of 12 px run along both edges, and there are a dashed centre line, a checkered finish line, the STOP and the traffic light, all drawn with `line`, `circle` and `rectangle`. Everything except the traffic light never changes, so this background is drawn only once; every frame copies it and draws on top only the traffic light, the car and the texts.
 3. Three one-channel masks are drawn apart with the same thick lines, never taken from the colors of the image: the road; where the centre of the car can be (the road 12 px narrower on each side, so the car never goes into the walls); and the zones, where every pixel holds the number of its zone (the finish line, the four checkpoints, the STOP area and its line, and the traffic light line). The zones are kept inside the road with `bitwise_and`, as in Lab 1. To know where the car is, the game reads a single pixel of a mask.
 
-**The car** (`car.py`). A car of 40×22 px, red for player 1 and blue for player 2, drawn once with `rectangle`, with its license plate written above it.
+**The car** (`car.py`). A car of 40×22 px, red for player 1 and blue for player 2, drawn once with `rectangle`, with its license plate written above it in the same color.
 
 - **Values:** top speed 260 px/s, acceleration 180 px/s² with full throttle, braking 340 px/s² with full brake (from full speed to 0 in about 0.8 s) and a turn rate of 130°/s with full steering, also when stopped. There is no reverse gear. With a throttle of 0 it keeps its speed, like the middle zone of the wheel, and if the wheel is lost it brakes with the wheels straight. We tuned the braking by playing with the keyboard, and the top speed and the turn rate by playing with the wheel.
 - It moves with the real `dt` between frames, in steps of at most 4 px, so it never jumps over a line of the zones mask.
@@ -294,9 +295,10 @@ The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if th
 - The countdown waits while either wheel cannot be seen, and when it ends `started()` becomes True once, so `main.py` takes the neutral position of both wheels at the same time.
 - Each car saves its laps with its own license plate, and `best_laps()` gives the best lap of each player.
 - The scoreboard has one line per player, after a small square of the color of their car.
+- All the cars are drawn first and then all the plates, so when the cars cross each other, a car never hides the plate of the other.
 - In the demo, `p` changes between one and two players.
 
-**Results so far.** Updating and drawing the game takes about 1 ms per frame on a laptop with one player, and about 1.3 ms with two, so the game does not limit the FPS. In simulation, a driver who follows the road at full speed and never stops takes 9.9 s per lap, plus its penalties (always the STOP, and the traffic light when it is red), and one who stops at the STOP and waits at the red light takes between 11 and 13 s, with no penalties. With the real tracker following a drawn wheel moved by a simulated player, a lap took 13.6 s (before the STOP and the traffic light were added).
+**Results so far.** On the laptop of the demo, updating and drawing the game takes about 3 ms per frame with one player and about 4 ms with two, so the game does not limit the FPS. In simulation, a driver who follows the road at full speed and never stops takes 9.9 s per lap, plus its penalties (always the STOP, and the traffic light when it is red), and one who stops at the STOP and waits at the red light takes between 11 and 13 s, with no penalties. With the real tracker following a drawn wheel moved by a simulated player, a lap took 13.6 s (before the STOP and the traffic light were added).
 
 ## Main program
 
