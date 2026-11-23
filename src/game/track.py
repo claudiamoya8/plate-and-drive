@@ -192,14 +192,18 @@ class Track:
             return ZONE_NONE
         return int(self.zones[yi, xi])
 
-    def start_pose(self):
-        """Where the car starts: in the middle of the road, just behind the finish line, facing the driving direction.
+    def start_pose(self, side=0.0):
+        """Where a car starts: just behind the finish line, facing the driving direction.
 
+        Args:
+            side (float): px to the right of the middle of the road, as seen by the driver
+                (negative: to the left). With two players the cars start side by side.
         Returns:
             tuple: (x, y, angle), with the angle in degrees, anticlockwise from the x axis as
             seen on screen (the convention of cv2.getRotationMatrix2D).
         """
         p, u = self.point_at(-START_GAP / self.length)
+        p = p + _normal(u) * side   # the normal points to the right of the driving direction on screen
         angle = float(np.arctan2(-u[1], u[0]) * 180 / np.pi)
         return float(p[0]), float(p[1]), angle
 

@@ -63,20 +63,23 @@ def make_sprite(color):
 class Car:
     """The car: its position, direction and speed, the walls and its drawing."""
 
-    def __init__(self, track, plate):
+    def __init__(self, track, plate, color=CAR_COLOR, side=0.0):
         """
         Args:
             track (Track): the track it drives on.
             plate (str): license plate, written above the car.
+            color (tuple): BGR colour of the body.
+            side (float): where it starts across the road, in px to the right of the middle (see Track.start_pose).
         """
         self.track = track
         self.plate = plate
-        self.sprite, self.sprite_mask = make_sprite(CAR_COLOR)
+        self.side = side
+        self.sprite, self.sprite_mask = make_sprite(color)
         self.reset()
 
     def reset(self):
-        """Puts the car back on the start, stopped."""
-        self.x, self.y, self.angle = self.track.start_pose()
+        """Puts the car back on its place on the start, stopped."""
+        self.x, self.y, self.angle = self.track.start_pose(self.side)
         self.speed = 0.0
         self.touching_wall = False
 
