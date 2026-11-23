@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker and the main program have their own sections below. The game already has the track, the car, free laps, the leaderboard, the stop sign and the traffic light; the two-player mode is still being built, so that part describes the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker, the game and the main program have their own sections below. The game already has the track, the car, free laps, the leaderboard, the stop sign and the traffic light; the two-player mode is still being built, so that part describes the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -157,7 +157,7 @@ class WheelTracker:
 
 Wherever it fits, we build on the code and methods of the course labs. This is what we take from each one:
 
-- **Lab 1:** HSV color segmentation with `inRange`, the trackbar tool to find color ranges, and rotations with `warpAffine`.
+- **Lab 1:** HSV color segmentation with `inRange`, the trackbar tool to find color ranges, rotations with `warpAffine`, and combining images with masks (`bitwise_and`, `bitwise_or`).
 - **Lab 2:** calibration with `findChessboardCorners`, `cornerSubPix` and `calibrateCamera`, and undistortion with `initUndistortRectifyMap` + `remap`.
 - **Lab 3:** Gaussian blur and binarization for the cards, and erosion and dilation for the wheel marks.
 - **Lab 4:** the homography from SIFT matching (`findHomography` + `perspectiveTransform`), which we use to read the cards.
@@ -247,6 +247,47 @@ The wheels are tracked on the mirrored image, the one the players see, so left a
 - If a wheel is lost, the game gets `Controls(0, -1, False)` and the car brakes.
 
 **Results so far.** With the real wheels the demo runs at about 30 FPS, and the tracker takes about 3.5 ms per frame. With simulated camera views (blur, noise, darker and brighter light, and a background with skin, wood and denim colors), the angle error stayed under 1.5° and the distance error under 3 % between 0.5 and 2 m, and a wheel moving away from the camera was followed up to 3.5 m. A mark covered for 8 frames was kept with an error of 0.6°. Other green or magenta objects in the room, even a sticker 16 pixels wide, neither stopped the wheel from being found nor were followed instead of a mark. When a finger covers half of a mark, the angle moves by about 7.5°, because the centre of the mark moves to its visible half.
+
+## Game
+
+A time trial on a single track seen from above, drawn with the drawing functions of the labs. It can be played with the keyboard, without a camera, and [the main program](#main-program) plays it with the wheel. For now it is for one player; the two-player mode is still being built. Everything is in `src/game/`, plus `src/controls.py`:
+
+```bash
+python -m src.game.demo   # the game with the keyboard (W/S/A/D = drive, e = end the turn, r = start again, m = masks, q = quit)
+python -m src.controls    # test window for the keyboard controls
+```
+
+**The track** (`track.py`). One track of 1280×720 px that fits on the screen, with the top-left and top-right corners kept free for the FPS and the small camera view.
+
+1. The centre line is a closed polygon of 13 points placed by hand, smoothed with Chaikin's algorithm (Chaikin, 1974): every side is replaced by two points at 1/4 and 3/4 of it, and after 4 rounds the corners have become round curves. This is not in the labs; it is a simple way to get a smooth track from a few points. The lap starts at the finish line and is about 2,540 px long.
+2. The road is that line drawn as a chain of very thick `line` segments (110 px), so `fillPoly` is not needed. Red and white walls of 12 px run along both edges, and there are a dashed centre line, a checkered finish line, the STOP and the traffic light, all drawn with `line`, `circle` and `rectangle`. Everything except the traffic light never changes, so this background is drawn only once; every frame copies it and draws on top only the traffic light, the car and the texts.
+3. Three one-channel masks are drawn apart with the same thick lines, never taken from the colors of the image: the road; where the centre of the car can be (the road 12 px narrower on each side, so the car never goes into the walls); and the zones, where every pixel holds the number of its zone (the finish line, the four checkpoints, the STOP area and its line, and the traffic light line). The zones are kept inside the road with `bitwise_and`, as in Lab 1. To know where the car is, the game reads a single pixel of a mask.
+
+**The car** (`car.py`). A red car of 40×22 px, drawn once with `rectangle`, with its license plate written above it.
+
+- **Values:** top speed 260 px/s, acceleration 180 px/s² with full throttle, braking 340 px/s² with full brake (from full speed to 0 in about 0.8 s) and a turn rate of 130°/s with full steering, also when stopped. There is no reverse gear. With a throttle of 0 it keeps its speed, like the middle zone of the wheel, and if the wheel is lost it brakes with the wheels straight. We tuned the braking by playing with the keyboard, and the top speed and the turn rate by playing with the wheel.
+- It moves with the real `dt` between frames, in steps of at most 4 px, so it never jumps over a line of the zones mask.
+- **Walls:** a step that would take the car out of its mask slides along the wall instead. Only the part of the step along the road is kept (its projection on the direction of the closest point of the centre line), with a push of 1 or 2 px towards the middle on the curves. When the car hits a wall it keeps only its speed along the wall (the speed times the cosine of the angle with the wall), and while it keeps pushing against it, it slows down to 100 px/s. It never gets stuck, and it can always turn away.
+- Every frame it is rotated with `getRotationMatrix2D` + `warpAffine` and pasted on the track with a mask, using `bitwise_and` and `bitwise_or`, as in Lab 1. The rotation uses `INTER_NEAREST`, so the mask keeps only 0 and 255 and the edges of the car stay clean.
+
+**Keyboard controls** (`src/controls.py`). The game receives `Controls(steering, throttle, visible)` on every frame, the same from the keyboard as from the tracker. `cv2.waitKey` only reports key presses, so every press of W/S/A/D adds 0.2 in its direction, and the opposite key drops the value to 0 at once. A key counts as released when no press of it has arrived for 0.6 s (Windows repeats a held key only after about 0.5 s), and then the value goes back to 0 little by little.
+
+**Free laps and the leaderboard** (`game.py`):
+
+1. A 3 s countdown with the car stopped on the start. It waits while the wheel cannot be seen, and when it ends, `main.py` takes the neutral position of the wheel.
+2. A lap is valid if the car goes through four invisible checkpoints in order and then crosses the finish line, so corners cannot be cut. The zones mask is read at every step the car took in the frame, so no line is missed even if the FPS drop.
+3. Every valid lap is saved at once in `data/leaderboard.json`, with the license plate, the time with its penalties and the penalties, so nothing is lost if the program is closed. The file is created with the first lap and is not uploaded: every computer keeps its own laps. Then the timer, the checkpoints and the penalties start again from 0, and the next lap goes on without stopping. A lap ends at the step where the car touched the finish line; the rest of that frame already counts for the next lap.
+4. The player drives as many laps as they want. The scoreboard at the top shows the lap, its time and penalties, the last lap and the best one, and for 2 s after each lap a panel on the grass shows its time. When the turn ends, the leaderboard shows the five fastest license plates, each with its best lap.
+
+The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if the program freezes for a moment the car does not jump and the time does not run away. All the texts are written with `put_text`, at fixed positions.
+
+**The STOP and the traffic light.** There is one of each, and breaking either rule adds 5 s to the lap in which it happens:
+
+- **STOP:** the car has to stop completely (below 5 px/s) inside the area before the thick white line. Crossing the line without having stopped there adds the penalty. The area is about 90 px long and braking from full speed takes about 100 px, so you have to start braking a little before it, as at a real stop sign.
+- **Traffic light:** green for 4 s, yellow for 1 s and red for 3 s, over and over, from the "GO!". Crossing its line while it is red adds the penalty; on yellow it does not.
+- Each line is checked the first time the car touches it in a lap, so a penalty is never counted twice. For 2 s the panel shows "STOP +5 s" or "RED LIGHT +5 s".
+
+**Results so far.** Updating and drawing the game takes about 1 ms per frame on a laptop, so the game does not limit the FPS. In simulation, a driver who follows the road at full speed and never stops takes 9.9 s per lap, plus its penalties (always the STOP, and the traffic light when it is red), and one who stops at the STOP and waits at the red light takes between 11 and 13 s, with no penalties. With the real tracker following a drawn wheel moved by a simulated player, a lap took 13.6 s (before the STOP and the traffic light were added).
 
 ## Main program
 
