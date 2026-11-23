@@ -79,13 +79,11 @@ def main():
 
         if turn_over:
             frame = game.track.draw("green")   # the track and the cars, without the scoreboard and the panels
-            for player in game.players:
-                player.car.draw(frame)
+            game.draw_cars(frame)
             draw_leaderboard(frame, rows)
         elif show_masks:
             frame = masks_view.copy()
-            for player in game.players:
-                player.car.draw(frame)
+            game.draw_cars(frame)
         else:
             frame = game.draw()
         put_text(frame, "W/S/A/D (player 2: I/K/J/L): drive   p: 1 or 2 players   e: end the turn   r: start again   "
