@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker, the game and the main program have their own sections below. The game already has the track, the car, free laps, the leaderboard, the stop sign and the traffic light; the two-player mode is still being built, so that part describes the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker, the game and the main program have their own sections below. The game is done, also for two players; the two-player mode of the main program is still being built, so that part describes the plan and may change. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -129,7 +129,8 @@ class Controls:
 
 # Game (free laps: main.py ends the turn with a key)
 class Game:
-    def __init__(self, plates: list[str]): ...  # 1 or 2 players
+    def __init__(self, plates: list[str]): ...  # 1 or 2 players: player 1 (left half of the camera) first
+    players: list[Player]  # in the same order; each one has its .plate and its .car (car.draw(image) draws it)
     def started(self) -> bool: ...  # the countdown has ended: main.py calls tracker.set_neutral() then
     def update(self, controls: list[Controls], dt: float) -> None: ...  # every valid lap is saved in data/leaderboard.json
     def draw(self) -> np.ndarray: ...  # BGR image of the track, to paste into the window
@@ -250,10 +251,10 @@ The wheels are tracked on the mirrored image, the one the players see, so left a
 
 ## Game
 
-A time trial on a single track seen from above, drawn with the drawing functions of the labs. It can be played with the keyboard, without a camera, and [the main program](#main-program) plays it with the wheel. For now it is for one player; the two-player mode is still being built. Everything is in `src/game/`, plus `src/controls.py`:
+A time trial on a single track seen from above, drawn with the drawing functions of the labs. It is for one or two players. It can be played with the keyboard, without a camera, and [the main program](#main-program) plays it with the wheels. Everything is in `src/game/`, plus `src/controls.py`:
 
 ```bash
-python -m src.game.demo   # the game with the keyboard (W/S/A/D = drive, e = end the turn, r = start again, m = masks, q = quit)
+python -m src.game.demo   # the game with the keyboard (W/S/A/D = drive, p = 1 or 2 players, e = end the turn, r = start again, m = masks, q = quit)
 python -m src.controls    # test window for the keyboard controls
 ```
 
@@ -263,21 +264,21 @@ python -m src.controls    # test window for the keyboard controls
 2. The road is that line drawn as a chain of very thick `line` segments (110 px), so `fillPoly` is not needed. Red and white walls of 12 px run along both edges, and there are a dashed centre line, a checkered finish line, the STOP and the traffic light, all drawn with `line`, `circle` and `rectangle`. Everything except the traffic light never changes, so this background is drawn only once; every frame copies it and draws on top only the traffic light, the car and the texts.
 3. Three one-channel masks are drawn apart with the same thick lines, never taken from the colors of the image: the road; where the centre of the car can be (the road 12 px narrower on each side, so the car never goes into the walls); and the zones, where every pixel holds the number of its zone (the finish line, the four checkpoints, the STOP area and its line, and the traffic light line). The zones are kept inside the road with `bitwise_and`, as in Lab 1. To know where the car is, the game reads a single pixel of a mask.
 
-**The car** (`car.py`). A red car of 40×22 px, drawn once with `rectangle`, with its license plate written above it.
+**The car** (`car.py`). A car of 40×22 px, red for player 1 and blue for player 2, drawn once with `rectangle`, with its license plate written above it.
 
 - **Values:** top speed 260 px/s, acceleration 180 px/s² with full throttle, braking 340 px/s² with full brake (from full speed to 0 in about 0.8 s) and a turn rate of 130°/s with full steering, also when stopped. There is no reverse gear. With a throttle of 0 it keeps its speed, like the middle zone of the wheel, and if the wheel is lost it brakes with the wheels straight. We tuned the braking by playing with the keyboard, and the top speed and the turn rate by playing with the wheel.
 - It moves with the real `dt` between frames, in steps of at most 4 px, so it never jumps over a line of the zones mask.
 - **Walls:** a step that would take the car out of its mask slides along the wall instead. Only the part of the step along the road is kept (its projection on the direction of the closest point of the centre line), with a push of 1 or 2 px towards the middle on the curves. When the car hits a wall it keeps only its speed along the wall (the speed times the cosine of the angle with the wall), and while it keeps pushing against it, it slows down to 100 px/s. It never gets stuck, and it can always turn away.
 - Every frame it is rotated with `getRotationMatrix2D` + `warpAffine` and pasted on the track with a mask, using `bitwise_and` and `bitwise_or`, as in Lab 1. The rotation uses `INTER_NEAREST`, so the mask keeps only 0 and 255 and the edges of the car stay clean.
 
-**Keyboard controls** (`src/controls.py`). The game receives `Controls(steering, throttle, visible)` on every frame, the same from the keyboard as from the tracker. `cv2.waitKey` only reports key presses, so every press of W/S/A/D adds 0.2 in its direction, and the opposite key drops the value to 0 at once. A key counts as released when no press of it has arrived for 0.6 s (Windows repeats a held key only after about 0.5 s), and then the value goes back to 0 little by little.
+**Keyboard controls** (`src/controls.py`). The game receives `Controls(steering, throttle, visible)` on every frame, the same from the keyboard as from the tracker. `cv2.waitKey` only reports key presses, so every press of W/S/A/D (I/K/J/L for player 2) adds 0.2 in its direction, and the opposite key drops the value to 0 at once. A key counts as released when no press of it has arrived for 0.6 s (Windows repeats a held key only after about 0.5 s), and then the value goes back to 0 little by little. Windows only repeats the last key held down, so with the keyboard two players cannot hold their keys at the same time; the two-player mode is really played with the wheels.
 
 **Free laps and the leaderboard** (`game.py`):
 
 1. A 3 s countdown with the car stopped on the start. It waits while the wheel cannot be seen, and when it ends, `main.py` takes the neutral position of the wheel.
 2. A lap is valid if the car goes through four invisible checkpoints in order and then crosses the finish line, so corners cannot be cut. The zones mask is read at every step the car took in the frame, so no line is missed even if the FPS drop.
 3. Every valid lap is saved at once in `data/leaderboard.json`, with the license plate, the time with its penalties and the penalties, so nothing is lost if the program is closed. The file is created with the first lap and is not uploaded: every computer keeps its own laps. Then the timer, the checkpoints and the penalties start again from 0, and the next lap goes on without stopping. A lap ends at the step where the car touched the finish line; the rest of that frame already counts for the next lap.
-4. The player drives as many laps as they want. The scoreboard at the top shows the lap, its time and penalties, the last lap and the best one, and for 2 s after each lap a panel on the grass shows its time. When the turn ends, the leaderboard shows the five fastest license plates, each with its best lap.
+4. The player drives as many laps as they want. The scoreboard at the top shows the lap, its time and penalties, the last lap and the best one, and for 2 s after each lap a panel on the grass shows its time, with the license plate of the car. When the turn ends, the leaderboard shows the five fastest license plates, each with its best lap.
 
 The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if the program freezes for a moment the car does not jump and the time does not run away. All the texts are written with `put_text`, at fixed positions.
 
@@ -285,9 +286,17 @@ The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if th
 
 - **STOP:** the car has to stop completely (below 5 px/s) inside the area before the thick white line. Crossing the line without having stopped there adds the penalty. The area is about 90 px long and braking from full speed takes about 100 px, so you have to start braking a little before it, as at a real stop sign.
 - **Traffic light:** green for 4 s, yellow for 1 s and red for 3 s, over and over, from the "GO!". Crossing its line while it is red adds the penalty; on yellow it does not.
-- Each line is checked the first time the car touches it in a lap, so a penalty is never counted twice. For 2 s the panel shows "STOP +5 s" or "RED LIGHT +5 s".
+- Each line is checked the first time the car touches it in a lap, so a penalty is never counted twice. For 2 s the panel shows "STOP" or "RED LIGHT", with the license plate of the car and "+5 s".
 
-**Results so far.** Updating and drawing the game takes about 1 ms per frame on a laptop, so the game does not limit the FPS. In simulation, a driver who follows the road at full speed and never stops takes 9.9 s per lap, plus its penalties (always the STOP, and the traffic light when it is red), and one who stops at the STOP and waits at the red light takes between 11 and 13 s, with no penalties. With the real tracker following a drawn wheel moved by a simulated player, a lap took 13.6 s (before the STOP and the traffic light were added).
+**Two players.** `Game([plate_1, plate_2])`: player 1 is the one on the left half of the camera image, and `controls[0]` is theirs.
+
+- The two cars start side by side, 80 px apart, player 1 on the left of the road. They share the track, the screen and the traffic light, but they do not crash into each other: they go through each other, like ghosts, and each one does its own time trial, with its own laps, penalties and timer. Split screen is still ruled out.
+- The countdown waits while either wheel cannot be seen, and when it ends `started()` becomes True once, so `main.py` takes the neutral position of both wheels at the same time.
+- Each car saves its laps with its own license plate, and `best_laps()` gives the best lap of each player.
+- The scoreboard has one line per player, after a small square of the color of their car.
+- In the demo, `p` changes between one and two players.
+
+**Results so far.** Updating and drawing the game takes about 1 ms per frame on a laptop with one player, and about 1.3 ms with two, so the game does not limit the FPS. In simulation, a driver who follows the road at full speed and never stops takes 9.9 s per lap, plus its penalties (always the STOP, and the traffic light when it is red), and one who stops at the STOP and waits at the red light takes between 11 and 13 s, with no penalties. With the real tracker following a drawn wheel moved by a simulated player, a lap took 13.6 s (before the STOP and the traffic light were added).
 
 ## Main program
 
