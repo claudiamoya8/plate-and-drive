@@ -18,7 +18,8 @@ How it moves (simple physics with the real dt between frames, so the speed does 
 
 How it is drawn, as in Lab 1: the car is drawn once facing right with rectangle, rotated with
 getRotationMatrix2D + warpAffine and pasted on the track with a mask, using bitwise_and and
-bitwise_or. Its plate is written above it with put_text.
+bitwise_or. Its plate is written above it with put_text, in the colour of the car, by a method
+of its own (draw_plate), so the game can write the plates after drawing all the cars.
 """
 import cv2
 import numpy as np
@@ -73,6 +74,7 @@ class Car:
         """
         self.track = track
         self.plate = plate
+        self.color = color
         self.side = side
         self.sprite, self.sprite_mask = make_sprite(color)
         self.reset()
@@ -155,7 +157,7 @@ class Car:
         return path
 
     def draw(self, image):
-        """Draws the car and its plate on the image (rotated as in Lab 1, pasted with a mask)."""
+        """Draws the car on the image (rotated as in Lab 1, pasted with a mask). Its plate is written by draw_plate."""
         M = cv2.getRotationMatrix2D((SPRITE / 2, SPRITE / 2), self.angle, 1.0)
         # INTER_NEAREST keeps the mask with only 0 and 255, so the edges of the car stay clean
         sprite = cv2.warpAffine(self.sprite, M, (SPRITE, SPRITE), flags=cv2.INTER_NEAREST)
@@ -174,5 +176,7 @@ class Car:
         front = cv2.bitwise_and(sprite, sprite, mask=mask)  # the car
         roi[:] = cv2.bitwise_or(back, front)
 
+    def draw_plate(self, image):
+        """Writes the plate above the car, in the colour of the car (the black outline of put_text keeps it readable)."""
         put_text(image, self.plate, (int(round(self.x)) - 6 * len(self.plate), int(round(self.y)) - 32),
-                 (255, 255, 255), 0.5)
+                 self.color, 0.5)
