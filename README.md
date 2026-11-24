@@ -4,7 +4,7 @@ Final project for **Computer Vision I** (3rd year, Mathematical Engineering, Uni
 
 The idea: you unlock your car by showing the webcam its license plate, one printed card per digit, and then you drive it around a race track by moving a steering wheel in front of the camera. The system has to run in real time and use only classical computer vision with OpenCV.
 
-> **Work in progress.** The camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker and the main program (`main.py`) are done; the calibration, the security system, the tracker, the game and the main program have their own sections below. The game is done, also for two players; the two-player mode of the main program is still being built, so that part describes the plan and may change. We update this README as the project evolves.
+> **Work in progress.** The whole system is built: the camera calibration, the shared camera module (`src/camera.py`), the security system, the steering wheel tracker, the game and the main program (`main.py`), also for two players. Each part has its own section below. We are now measuring the results for the report and preparing the demo video. We update this README as the project evolves.
 
 **Key dates (group B):** idea approval on 20 November 2026; final delivery and presentation on 4 December 2026.
 
@@ -238,7 +238,7 @@ python -m src.tracker.wheel   # live demo (n = neutral position, p = 1 or 2 play
 2. Erosion and then dilation with a 3×3 kernel, so specks of a few pixels disappear and the marks keep their size. We use `cv2.erode` and `cv2.dilate` instead of the hand-written loops of Lab 3, which would be far too slow for live video.
 3. While a wheel is not being followed (at the start, or after losing it), `findContours`, which we also use for the cards, finds every blob of each color. The wheel is the pair of blobs, one green and one magenta, placed most like the marks on the plate: about the same size and about 1.8 diameters apart. Because every blob is looked at, other green or magenta things in the room do not stop the wheel from being found.
 4. Each mark is then followed with a Kalman filter and `meanShift`. The filter, with a constant velocity model, predicts where the mark will be; `meanShift` looks for it there; and the centre it finds corrects the filter. In Lab 5 `meanShift` worked on the back projection of a hue histogram; here it works on the color mask, because the range of the mark is already known. If a hand covers a mark for a moment, its predicted position is used. After 10 frames without it (a third of a second), the wheel counts as lost and is searched for again as in step 3.
-5. The box around the wheel is drawn with `rectangle`.
+5. The box around the wheel is drawn with `rectangle`, in the color of the player's car in the game: red for player 1 and blue for player 2.
 
 The wheels are tracked on the mirrored image, the one the players see, so left and right mean the same for them and for the program. With two players, each one has half of the image: player 1 on the left, player 2 on the right.
 
@@ -306,16 +306,17 @@ The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if th
 
 ```bash
 python -m src.tracker.tune   # first, wherever you are going to play: tune the colors of the wheel marks to the light
-python main.py               # the whole program (n = new car, r = start the plate again, e = end the turn, q = quit)
+python main.py               # the whole program (n = new car, p = one or two players, r = start the plates again, e = end the turn, q = quit)
 ```
 
 Every frame the camera image is undistorted and goes to the current phase:
 
 1. **Access.** The player shows the four digits of the license plate, one card at a time, as in `python -m src.security.decoder`. The cards are read on the original frame, and the image is only mirrored to show it. With a registered plate the screen says "Access granted" and the game starts 1.5 s later. `n` registers a new car and `r` starts the plate again.
-2. **Game.** The tracker works on the mirrored image and turns the wheel into `Controls` for the game. During the countdown the player holds the wheel straight, at a comfortable distance; when it ends (`Game.started()`), that position becomes the neutral one (`set_neutral`). The player drives as many laps as they want, and every valid lap is saved in `data/leaderboard.json`. On screen: the game, the small camera view with the tracker box in the top-right corner, the FPS in the top-left one and, under the track, what to do with the wheel and the keys. `e` ends the turn.
-3. **Leaderboard.** For 8 s, the best lap of each license plate and the best lap of this turn. Then the program goes back to the access for the next car.
+   - **Two players** (`p`): player 1 shows their plate and then player 2. Before player 2's first digit, the last card has to be taken away, as between two digits, so it is not read twice. The same plate cannot be both players. Player 1 stands on the left half of the image and player 2 on the right one.
+2. **Game.** The tracker works on the mirrored image and turns each wheel into `Controls` for the game, player 1 first. During the countdown the players hold their wheels straight, at a comfortable distance; when it ends (`Game.started()`), that position becomes the neutral one of every wheel at once (`set_neutral`). The players drive as many laps as they want, and every valid lap is saved in `data/leaderboard.json`. On screen: the game, the small camera view with the tracker boxes in the top-right corner, the FPS in the top-left one and, under the track, what to do with the wheels (which wheel is missing, or lost) and the keys. `e` ends the turn.
+3. **Leaderboard.** For 8 s, the best lap of each license plate and the best lap of each player in this turn. Then the program goes back to the access for the next turn, with the same number of players.
 
-Every turn starts with a new tracker, so one player's neutral position is never used for the next one. For now there is one player per turn; the two-player mode is still being built. `q`, `ESC` or closing the window quits at any moment.
+Every turn starts with a new tracker, so one player's neutral position is never used for the next one. `q`, `ESC` or closing the window quits at any moment.
 
 ## Hardware and environment
 
