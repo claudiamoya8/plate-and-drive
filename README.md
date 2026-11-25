@@ -295,6 +295,7 @@ The lap time is game time: each frame adds its `dt`, limited to 0.05 s, so if th
 - The countdown waits while either wheel cannot be seen, and when it ends `started()` becomes True once, so `main.py` takes the neutral position of both wheels at the same time.
 - Each car saves its laps with its own license plate, and `best_laps()` gives the best lap of each player.
 - The scoreboard has one line per player, after a small square of the color of their car.
+- Each player has their own notices. The panel shows one line for each player with a notice, in the color of their car (for example "2047  STOP +5 s" and "7777  STOP +5 s"), so when both get one at the same time, as at the STOP of the first lap, both are seen.
 - All the cars are drawn first and then all the plates, so when the cars cross each other, a car never hides the plate of the other.
 - In the demo, `p` changes between one and two players.
 
