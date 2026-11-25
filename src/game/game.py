@@ -35,13 +35,15 @@ twice even though the car takes several frames to cross the line.
 
 On screen (draw(): 1280 x 720, without the FPS): the track with the traffic light and the cars,
 each with its plate above it in the colour of the car (draw_cars: first all the cars and then
-all the plates, so a car never hides the plate of the other); the scoreboard at the top (plate, lap, time of this lap,
-penalties, last lap and best lap: in two lines with one player, and in one line per player,
-after a square of the colour of its car, with two); and, in a dark panel drawn with rectangle on
-the grass inside the loop, the countdown (or the message to show the wheels), "GO!" and, for
-2 s, the time of each lap or each penalty, with the plate of its car. All texts are written
-with put_text of src/camera.py, at fixed positions. The two top corners are left free for the
-FPS and the small camera view.
+all the plates, so a car never hides the plate of the other); the scoreboard at the top (plate,
+lap, time of this lap, penalties, last lap and best lap: in two lines with one player, and in
+one line per player, after a square of the colour of its car, with two); and, in a dark panel
+drawn with rectangle on the grass inside the loop, the countdown (or the message to show the
+wheels), "GO!" and, for 2 s, the time of each lap or each penalty. Each player has their own
+notice: with one player the panel shows it big, with the plate of the car; with two, it shows
+one line for each player with a notice, in the colour of their car, so two notices at the same
+time are both seen. All texts are written with put_text of src/camera.py, at fixed positions.
+The two top corners are left free for the FPS and the small camera view.
 
 The lap time is game time: each frame adds its dt, limited to MAX_DT. At the normal frame
 rate (about 30 FPS with the camera) this is the real time; if the program freezes for a
@@ -164,6 +166,8 @@ class Player:
         self.light_passed = False     # True once the car has touched the traffic light line in this lap
         self.last_lap = None          # final time of the last lap (None until the first one is complete)
         self.best_lap = None          # final time of the best lap of this turn
+        self.notice = ""              # what the panel shows about this player for a moment: "LAP TIME", "STOP" or "RED LIGHT"
+        self.notice_time = 0.0        # seconds left to show it
 
 
 class Game:
@@ -184,9 +188,6 @@ class Game:
         self.countdown = COUNTDOWN    # seconds left before the start
         self.waiting_wheel = False    # True while the countdown waits for the wheels to be seen
         self.race_time = 0.0          # seconds since the "GO!" (game time): the traffic light runs on it
-        self.notice = ""              # what the panel shows for a moment: "LAP TIME", "STOP" or "RED LIGHT"
-        self.notice_player = None     # the player it is about
-        self.notice_time = 0.0        # seconds left to show it
 
     @property
     def car(self):
@@ -234,7 +235,8 @@ class Game:
             return
 
         self.race_time += dt
-        self.notice_time = max(self.notice_time - dt, 0.0)
+        for player in self.players:
+            player.notice_time = max(player.notice_time - dt, 0.0)
         for player, control in zip(self.players, controls):
             self._drive(player, control, dt)
 
@@ -270,7 +272,7 @@ class Game:
     def _penalty(self, player, seconds, notice):
         """Adds a penalty to the lap of a player and shows it in the panel for a moment."""
         player.penalties += seconds
-        self.notice, self.notice_player, self.notice_time = notice, player, NOTICE_TIME
+        player.notice, player.notice_time = notice, NOTICE_TIME
 
     def _complete_lap(self, player, driving_time):
         """Saves the lap a player has just completed and starts their next one."""
@@ -287,7 +289,7 @@ class Game:
         player.stopped_at_stop = False
         player.stop_passed = False
         player.light_passed = False
-        self.notice, self.notice_player, self.notice_time = "LAP TIME", player, NOTICE_TIME
+        player.notice, player.notice_time = "LAP TIME", NOTICE_TIME
 
     def draw_cars(self, image):
         """Draws all the cars and then all their plates, so a car never hides the plate of the other.
@@ -322,6 +324,7 @@ class Game:
                                 f"+{player.penalties:.0f} s  Last {last}  Best {best}", (x + 22, y), WHITE, 0.6)
 
         # The texts of the panel go at fixed positions, centred in it
+        noticed = [player for player in self.players if player.notice_time > 0]   # players with a notice now
         if not self.started():
             draw_panel(image)
             if self.waiting_wheel:
@@ -332,16 +335,29 @@ class Game:
         elif self.race_time < GO_TIME:
             draw_panel(image)
             put_text(image, "GO!", (413, 462), YELLOW, 2.5)
-        elif self.notice_time > 0:
+        elif noticed and len(self.players) == 1:
+            # One player: the notice in big letters, with the plate of the car under it
             draw_panel(image)
-            plate = self.notice_player.plate
-            if self.notice == "LAP TIME":
+            player = noticed[0]
+            if player.notice == "LAP TIME":
                 put_text(image, "LAP TIME", (368, 431), YELLOW, 1.6)
-                put_text(image, f"{plate}   {format_time(self.notice_player.last_lap)}", (354, 475), WHITE, 1.1)
-            elif self.notice == "STOP":
+                put_text(image, f"{player.plate}   {format_time(player.last_lap)}", (354, 475), WHITE, 1.1)
+            elif player.notice == "STOP":
                 put_text(image, "STOP", (416, 431), RED, 1.6)
-                put_text(image, f"{plate}   +{STOP_PENALTY:.0f} s", (365, 475), WHITE, 1.1)
+                put_text(image, f"{player.plate}   +{STOP_PENALTY:.0f} s", (365, 475), WHITE, 1.1)
             else:
                 put_text(image, "RED LIGHT", (350, 431), RED, 1.6)
-                put_text(image, f"{plate}   +{RED_LIGHT_PENALTY:.0f} s", (365, 475), WHITE, 1.1)
+                put_text(image, f"{player.plate}   +{RED_LIGHT_PENALTY:.0f} s", (365, 475), WHITE, 1.1)
+        elif noticed:
+            # Two players: one line for each player with a notice, in the colour of their car
+            draw_panel(image)
+            rows = (443,) if len(noticed) == 1 else (423, 463)   # one line in the middle, or one under the other
+            for y, player in zip(rows, noticed):
+                if player.notice == "LAP TIME":
+                    text, x = f"{player.plate}  LAP TIME {format_time(player.last_lap)}", 351
+                elif player.notice == "STOP":
+                    text, x = f"{player.plate}  STOP +{STOP_PENALTY:.0f} s", 379
+                else:
+                    text, x = f"{player.plate}  RED LIGHT +{RED_LIGHT_PENALTY:.0f} s", 350
+                put_text(image, text, (x, y), player.color, 0.7)
         return image
